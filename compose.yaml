@@ -12,7 +12,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3001
-      - JWT_SECRET=change-me-to-a-secure-secret
+      # JWT_SECRET: 不设置则首次启动自动生成随机密钥并持久化，设置则使用指定值
 
 volumes:
   mikus-data:

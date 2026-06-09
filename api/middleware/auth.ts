@@ -5,7 +5,11 @@ import { type Request, type Response, type NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { getDb, query } from '../db.js'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mikus-secret-key-2024'
+export let JWT_SECRET = process.env.JWT_SECRET || ''
+
+export function setJwtSecret(secret: string) {
+  JWT_SECRET = secret
+}
 
 export interface AuthUser {
   id: string

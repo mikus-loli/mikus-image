@@ -12,7 +12,9 @@ import fs from 'fs'
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 
-import { initDb, scheduleSave } from './db.js'
+import crypto from 'crypto'
+import { initDb, scheduleSave, query } from './db.js'
+import { setJwtSecret } from './middleware/auth.js'
 import authRoutes from './routes/auth.js'
 import imageRoutes from './routes/images.js'
 import albumRoutes from './routes/albums.js'
@@ -121,6 +123,20 @@ export async function initializeApp(): Promise<void> {
   if (dbInitialized) return
   await initDb()
   dbInitialized = true
+
+  // Auto-generate JWT_SECRET if not set via env
+  if (!process.env.JWT_SECRET) {
+    const rows = query("SELECT value FROM settings WHERE key = 'jwt_secret'")
+    let secret = rows[0]?.value as string | undefined
+    if (!secret) {
+      secret = crypto.randomBytes(48).toString('hex')
+      query("INSERT INTO settings (key, value, type, description, sort) VALUES ('jwt_secret', ?, 'string', 'JWT 密钥（自动生成）', 0)", [secret])
+      scheduleSave()
+      console.log('JWT secret auto-generated and saved to database')
+    }
+    setJwtSecret(secret)
+  }
+
   console.log('App initialized')
 
   // Save DB on process exit

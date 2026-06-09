@@ -6,11 +6,10 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
 import { getDb, query, saveDbToFile } from '../db.js'
-import { authMiddleware } from '../middleware/auth.js'
+import { authMiddleware, JWT_SECRET } from '../middleware/auth.js'
 
 const router = Router()
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mikus-secret-key-2024'
 const JWT_EXPIRES_IN = '7d'
 
 function generateToken(user: { id: string; name: string; email: string; role: string }): string {
