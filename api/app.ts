@@ -53,6 +53,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 // Serve static files from uploads directory at project root
 app.use('/uploads', express.static(path.join(PROJECT_ROOT, 'uploads')))
 
+// Serve frontend static files (production only)
+const DIST_PATH = path.join(PROJECT_ROOT, 'dist')
+if (fs.existsSync(DIST_PATH)) {
+  app.use(express.static(DIST_PATH))
+}
+
 /**
  * API Routes
  */
@@ -107,14 +113,20 @@ app.use((error: Error, req: Request, res: Response, _next: NextFunction) => {
 })
 
 /**
- * 404 handler
+ * SPA fallback — serve index.html for non-API routes (production only)
  */
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({
-    status: false,
-    message: 'API不存在',
+if (fs.existsSync(DIST_PATH)) {
+  app.get('*', (_req: Request, res: Response) => {
+    res.sendFile(path.join(DIST_PATH, 'index.html'))
   })
-})
+} else {
+  app.use((_req: Request, res: Response) => {
+    res.status(404).json({
+      status: false,
+      message: 'API不存在',
+    })
+  })
+}
 
 // Initialize database before exporting
 let dbInitialized = false
