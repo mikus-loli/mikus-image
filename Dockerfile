@@ -14,9 +14,9 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Install production dependencies only
+# Install production dependencies + tsx for runtime TS support
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm install --omit=dev && npm install tsx && npm cache clean --force
 
 # Copy built frontend
 COPY --from=builder /app/dist ./dist
