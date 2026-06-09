@@ -1,0 +1,19 @@
+services:
+  mikus:
+    build: .
+    image: ghcr.io/mikus/image-host:latest
+    container_name: mikus-image-host
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - mikus-data:/app/api/data
+      - mikus-uploads:/app/uploads
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - JWT_SECRET=change-me-to-a-secure-secret
+
+volumes:
+  mikus-data:
+  mikus-uploads:
