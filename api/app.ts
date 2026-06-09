@@ -130,7 +130,7 @@ export async function initializeApp(): Promise<void> {
     let secret = rows[0]?.value as string | undefined
     if (!secret) {
       secret = crypto.randomBytes(48).toString('hex')
-      query("INSERT INTO settings (key, value, type, description, sort) VALUES ('jwt_secret', ?, 'string', 'JWT 密钥（自动生成）', 0)", [secret])
+      query("INSERT INTO settings (key, value, type, description) VALUES ('jwt_secret', ?, 'string', 'JWT 密钥（自动生成）')", [secret])
       scheduleSave()
       console.log('JWT secret auto-generated and saved to database')
     }
