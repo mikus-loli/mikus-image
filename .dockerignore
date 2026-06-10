@@ -9,4 +9,4 @@ api/data
 .env
 .env.*
 *.log
-uploads/*
+uploads
