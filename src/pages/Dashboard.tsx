@@ -22,10 +22,13 @@ import {
 import { dashboardApi } from '@/lib/api';
 
 interface Stats {
-  total_images: number;
-  total_storage: number;
-  today_uploads: number;
-  active_users: number;
+  totalImages: number;
+  totalStorage: number;
+  todayUploads: number;
+  activeUsers: number;
+  totalUsers?: number;
+  totalAlbums?: number;
+  strategies?: { name: string; value: number }[];
 }
 
 interface TrendItem {
@@ -78,7 +81,7 @@ export default function Dashboard() {
         if (statsData?.strategies) {
           setStorage(statsData.strategies);
         } else {
-          setStorage([{ name: '默认存储', value: statsData?.total_storage || 0 }]);
+          setStorage([{ name: '默认存储', value: statsData?.totalStorage || 0 }]);
         }
       } catch {
         // Use default data on error
@@ -115,25 +118,25 @@ export default function Dashboard() {
         <StatCard
           icon={<Image size={20} className="text-th-accent" />}
           label="总图片数"
-          value={stats?.total_images || 0}
+          value={stats?.totalImages || 0}
           color="bg-th-accent-bg"
         />
         <StatCard
           icon={<HardDrive size={20} className="text-th-accent" />}
           label="总存储量"
-          value={formatSize(stats?.total_storage || 0)}
+          value={formatSize(stats?.totalStorage || 0)}
           color="bg-th-accent-bg"
         />
         <StatCard
           icon={<Upload size={20} className="text-th-accent" />}
           label="今日上传"
-          value={stats?.today_uploads || 0}
+          value={stats?.todayUploads || 0}
           color="bg-th-accent-bg"
         />
         <StatCard
           icon={<Users size={20} className="text-th-accent" />}
           label="活跃用户"
-          value={stats?.active_users || 0}
+          value={stats?.activeUsers || 0}
           color="bg-th-accent-bg"
         />
       </div>

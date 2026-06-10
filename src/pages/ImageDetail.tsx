@@ -5,10 +5,8 @@ import {
   Copy,
   Check,
   Trash2,
-  QrCode,
   Save,
   X,
-  Eye,
   Calendar,
   HardDrive,
   Maximize,
@@ -18,13 +16,21 @@ import { albumsApi } from '@/lib/api';
 
 type LinkTab = 'url' | 'markdown' | 'html' | 'bbcode';
 
+function getFullUrl(url: string): string {
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  return window.location.origin + url;
+}
+
 function generateLink(url: string, name: string, tab: LinkTab) {
+  const fullUrl = getFullUrl(url);
   switch (tab) {
-    case 'url': return url;
-    case 'markdown': return `![${name}](${url})`;
-    case 'html': return `<img src="${url}" alt="${name}" />`;
-    case 'bbcode': return `[img]${url}[/img]`;
-    default: return url;
+    case 'url': return fullUrl;
+    case 'markdown': return `![${name}](${fullUrl})`;
+    case 'html': return `<img src="${fullUrl}" alt="${name}" />`;
+    case 'bbcode': return `[img]${fullUrl}[/img]`;
+    default: return fullUrl;
   }
 }
 
@@ -35,7 +41,6 @@ export default function ImageDetail() {
   const [activeTab, setActiveTab] = useState<LinkTab>('url');
   const [copied, setCopied] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [showQrCode, setShowQrCode] = useState(false);
   const [albums, setAlbums] = useState<{ id: string; name: string }[]>([]);
   const [editAlbum, setEditAlbum] = useState('');
   const [editPermission, setEditPermission] = useState('');
@@ -150,10 +155,6 @@ export default function ImageDetail() {
                 <span>尺寸: {img.width} × {img.height}</span>
               </div>
               <div className="flex items-center gap-2 text-th-text-ter">
-                <Eye size={14} />
-                <span>浏览: {img.views} 次</span>
-              </div>
-              <div className="flex items-center gap-2 text-th-text-ter">
                 <Calendar size={14} />
                 <span>上传: {new Date(img.created_at).toLocaleDateString('zh-CN')}</span>
               </div>
@@ -238,13 +239,6 @@ export default function ImageDetail() {
                 {copied ? <Check size={16} className="text-th-accent" /> : <Copy size={16} />}
               </button>
             </div>
-            <button
-              onClick={() => setShowQrCode(true)}
-              className="btn-secondary flex w-full items-center justify-center gap-2 text-sm"
-            >
-              <QrCode size={14} />
-              显示二维码
-            </button>
           </div>
 
           {/* Delete */}
@@ -257,23 +251,6 @@ export default function ImageDetail() {
           </button>
         </div>
       </div>
-
-      {/* QR Code Modal */}
-      {showQrCode && (
-        <div className="modal-overlay" onClick={() => setShowQrCode(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-th-text">二维码</h3>
-              <button onClick={() => setShowQrCode(false)} className="text-th-text-ter hover:text-th-text">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="flex justify-center p-4">
-              <p className="text-sm text-th-text-ter">二维码生成功能</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Delete confirmation */}
       {confirmDelete && (

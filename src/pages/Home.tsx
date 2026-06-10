@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
   ArrowRight,
   Copy,
@@ -19,9 +19,12 @@ import {
   Users,
   ImageIcon,
   Clock,
+  Loader2,
+  Check,
+  X,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
-import { settingsApi } from '@/lib/api';
+import { settingsApi, imagesApi } from '@/lib/api';
 
 const highlights = [
   { icon: Zap, label: '极速上传', desc: '拖拽 / 粘贴 / URL' },
@@ -43,22 +46,147 @@ interface SiteStats {
   days: number;
 }
 
+interface UploadedImage {
+  id: string;
+  url: string;
+  name: string;
+}
+
 function formatNumber(n: number): string {
   if (n >= 10000) return (n / 10000).toFixed(1) + 'w';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
   return String(n);
 }
 
+function getBaseUrl(): string {
+  return window.location.origin;
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuthStore();
   const [stats, setStats] = useState<SiteStats>({ users: 0, images: 0, days: 0 });
+  const [registerEnabled, setRegisterEnabled] = useState<boolean | null>(null);
+
+  // Upload states
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedImage, setUploadedImage] = useState<UploadedImage | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [copiedFormat, setCopiedFormat] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUpload = useCallback(async (file: File) => {
+    if (!isAuthenticated) return;
+    if (!file.type.startsWith('image/')) {
+      setUploadError('请选择图片文件');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+    setUploadedImage(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await imagesApi.upload(formData);
+      const data = res.data.data;
+      if (data) {
+        setUploadedImage({
+          id: data.id,
+          url: data.url,
+          name: data.original_name,
+        });
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setUploadError(msg || '上传失败');
+    } finally {
+      setIsUploading(false);
+    }
+  }, [isAuthenticated]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleUpload(file);
+  }, [handleUpload]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setIsDragOver(false);
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleUpload(file);
+  }, [handleUpload]);
+
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) handleUpload(file);
+        break;
+      }
+    }
+  }, [handleUpload]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      window.addEventListener('paste', handlePaste);
+      return () => window.removeEventListener('paste', handlePaste);
+    }
+  }, [isAuthenticated, handlePaste]);
+
+  const copyToClipboard = async (format: string) => {
+    if (!uploadedImage) return;
+    const baseUrl = getBaseUrl();
+    const fullUrl = uploadedImage.url.startsWith('http') ? uploadedImage.url : `${baseUrl}${uploadedImage.url}`;
+
+    let text = '';
+    switch (format) {
+      case '直链':
+        text = fullUrl;
+        break;
+      case 'Markdown':
+        text = `![${uploadedImage.name}](${fullUrl})`;
+        break;
+      case 'HTML':
+        text = `<img src="${fullUrl}" alt="${uploadedImage.name}" />`;
+        break;
+      case '二维码':
+        text = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(fullUrl)}`;
+        break;
+    }
+
+    await navigator.clipboard.writeText(text);
+    setCopiedFormat(format);
+    setTimeout(() => setCopiedFormat(null), 2000);
+  };
 
   useEffect(() => {
     settingsApi.getPublicStats()
       .then((res) => {
         const d = res.data.data;
         if (d) setStats({ users: d.users || 0, images: d.images || 0, days: d.days || 0 });
+      })
+      .catch(() => {});
+
+    settingsApi.getPublicSettings()
+      .then((res) => {
+        const settings = res.data.data;
+        if (settings?.register_enabled !== undefined) {
+          setRegisterEnabled(settings.register_enabled === 'true');
+        }
       })
       .catch(() => {});
   }, []);
@@ -74,11 +202,11 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
           <Link to="/" className="group flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--color-accent),#00b89c)] shadow-lg shadow-th-accent-shadow/40 transition-transform duration-300 group-hover:scale-105">
-              <Camera className="text-white" size={20} />
+              <span className="font-outfit text-lg font-bold text-white">M</span>
             </div>
             <div className="flex flex-col">
               <span className="font-outfit text-lg font-bold leading-tight">Mikus</span>
-              <span className="text-[10px] uppercase tracking-[0.2em] text-th-text-ter">Image Host</span>
+              
             </div>
           </Link>
 
@@ -99,13 +227,22 @@ export default function Home() {
               </div>
             ) : (
               <>
-                <Link to="/login" className="rounded-full px-5 py-2 text-sm font-medium text-th-text-sec transition-colors hover:text-th-text">
-                  登录
-                </Link>
-                <Link to="/register" className="btn-primary inline-flex items-center gap-2 text-sm">
-                  免费注册
-                  <ArrowRight size={15} />
-                </Link>
+                {registerEnabled === false ? (
+                  <Link to="/login" className="btn-primary inline-flex items-center gap-2 text-sm">
+                    登录
+                    <ArrowRight size={15} />
+                  </Link>
+                ) : (
+                  <Link to="/login" className="rounded-full px-5 py-2 text-sm font-medium text-th-text-sec transition-colors hover:text-th-text">
+                    登录
+                  </Link>
+                )}
+                {registerEnabled === true && (
+                  <Link to="/register" className="btn-primary inline-flex items-center gap-2 text-sm">
+                    免费注册
+                    <ArrowRight size={15} />
+                  </Link>
+                )}
               </>
             )}
           </div>
@@ -125,8 +262,10 @@ export default function Home() {
           <h1 className="max-w-3xl font-outfit text-4xl font-bold leading-[1.15] tracking-tight sm:text-5xl lg:text-6xl">
             高效优雅的
             <br />
-            <span className="mt-2 inline-block bg-[linear-gradient(135deg,var(--color-accent),#7cf7e3,#00b89c)] bg-clip-text text-transparent">图片托管与管理</span>
+            <span className="mt-5 inline-block bg-[linear-gradient(135deg,var(--color-accent),#7cf7e3,#00b89c)] bg-clip-text text-transparent">图片托管与管理</span>
           </h1>
+
+
 
           {/* Subtitle */}
           <p className="mt-6 max-w-xl text-base leading-8 text-th-text-sec sm:text-lg sm:leading-9">
@@ -136,7 +275,7 @@ export default function Home() {
           {/* CTA */}
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <button
-              onClick={() => navigate(isAuthenticated ? '/upload' : '/register')}
+              onClick={() => navigate(isAuthenticated ? '/upload' : '/login')}
               className="btn-primary inline-flex items-center gap-2 px-8 py-3 text-base"
             >
               <Upload size={18} />
@@ -158,7 +297,7 @@ export default function Home() {
       {/* Preview card */}
       <section className="relative z-10 mx-auto max-w-5xl px-6 pb-20">
         <div className="overflow-hidden rounded-2xl border border-th-border/60 bg-th-bg-glass-card/60 shadow-2xl shadow-black/5 backdrop-blur-2xl">
-          {/* Toolbar mock */}
+          {/* Toolbar */}
           <div className="flex items-center gap-2 border-b border-th-border/50 px-5 py-3">
             <div className="flex gap-1.5">
               <div className="h-3 w-3 rounded-full bg-red-400/60" />
@@ -166,28 +305,98 @@ export default function Home() {
               <div className="h-3 w-3 rounded-full bg-green-400/60" />
             </div>
             <div className="mx-auto rounded-md bg-th-bg-tertiary/60 px-4 py-1 text-xs text-th-text-ter">
-              mikus.image.host
+              {isAuthenticated ? '快速上传' : '上传预览'}
             </div>
           </div>
-          {/* Content mock */}
+          {/* Content */}
           <div className="grid gap-4 p-6 sm:grid-cols-3">
-            {/* Upload zone mock */}
-            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-th-border/60 bg-th-bg-upload/40 py-10 sm:col-span-2">
-              <div className="mb-3 rounded-full bg-th-accent-bg p-3">
-                <Upload size={24} className="text-th-accent" />
+            {/* Upload zone */}
+            {isAuthenticated ? (
+              <div
+                className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-10 sm:col-span-2 transition-colors cursor-pointer ${
+                  isDragOver
+                    ? 'border-th-accent bg-th-accent-bg/40'
+                    : 'border-th-border/60 bg-th-bg-upload/40 hover:border-th-accent/60 hover:bg-th-bg-upload/60'
+                }`}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+                {isUploading ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <Loader2 size={24} className="animate-spin text-th-accent" />
+                    <div className="text-sm text-th-text-sec">上传中...</div>
+                  </div>
+                ) : uploadError ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="rounded-full bg-th-danger-bg p-3">
+                      <X size={24} className="text-th-danger" />
+                    </div>
+                    <div className="text-sm text-th-danger">{uploadError}</div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setUploadError(null); }}
+                      className="text-xs text-th-text-ter hover:text-th-text"
+                    >
+                      重试
+                    </button>
+                  </div>
+                ) : uploadedImage ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="rounded-full bg-th-accent-bg p-3">
+                      <Check size={24} className="text-th-accent" />
+                    </div>
+                    <div className="text-sm font-medium text-th-text">上传成功</div>
+                    <div className="text-xs text-th-text-ter">{uploadedImage.name}</div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-3 rounded-full bg-th-accent-bg p-3">
+                      <Upload size={24} className="text-th-accent" />
+                    </div>
+                    <div className="text-sm font-medium text-th-text">拖拽图片到此处上传</div>
+                    <div className="mt-1 text-xs text-th-text-ter">或点击选择 · Ctrl+V 粘贴</div>
+                  </>
+                )}
               </div>
-              <div className="text-sm font-medium text-th-text">拖拽图片到此处上传</div>
-              <div className="mt-1 text-xs text-th-text-ter">或点击选择 · Ctrl+V 粘贴 · URL 导入</div>
-            </div>
-            {/* Link formats mock */}
+            ) : (
+              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-th-border/60 bg-th-bg-upload/40 py-10 sm:col-span-2">
+                <div className="mb-3 rounded-full bg-th-accent-bg p-3">
+                  <Upload size={24} className="text-th-accent" />
+                </div>
+                <div className="text-sm font-medium text-th-text">拖拽图片到此处上传</div>
+                <div className="mt-1 text-xs text-th-text-ter">或点击选择 · Ctrl+V 粘贴 · URL 导入</div>
+              </div>
+            )}
+            {/* Link formats */}
             <div className="flex flex-col gap-3">
               {linkFormats.map((fmt) => {
                 const Icon = fmt.icon;
+                const isCopied = copiedFormat === fmt.label;
                 return (
-                  <div key={fmt.label} className="flex items-center gap-3 rounded-xl border border-th-border/50 bg-th-bg-card/60 px-4 py-3">
-                    <Icon size={16} className="text-th-accent" />
+                  <div
+                    key={fmt.label}
+                    className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
+                      uploadedImage && isAuthenticated
+                        ? 'border-th-accent/50 bg-th-accent-bg/40 cursor-pointer hover:bg-th-accent-bg/60'
+                        : 'border-th-border/50 bg-th-bg-card/60'
+                    }`}
+                    onClick={() => uploadedImage && isAuthenticated && copyToClipboard(fmt.label)}
+                  >
+                    <Icon size={16} className={uploadedImage ? 'text-th-accent' : 'text-th-accent'} />
                     <span className="text-sm text-th-text-sec">{fmt.label}</span>
-                    <Copy size={12} className="ml-auto text-th-text-ter" />
+                    {isCopied ? (
+                      <Check size={12} className="ml-auto text-th-accent" />
+                    ) : (
+                      <Copy size={12} className="ml-auto text-th-text-ter" />
+                    )}
                   </div>
                 );
               })}

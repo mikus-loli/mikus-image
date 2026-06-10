@@ -48,7 +48,7 @@ export default function Layout() {
   const filteredNavItems = navItems.filter((item) => !item.admin || isAdmin);
 
   const usedPercent = user
-    ? Math.min(Math.round((user.used_capacity / user.capacity) * 100), 100)
+    ? Math.min(Math.round(((user.used_capacity || 0) / (user.capacity || 1)) * 100), 100)
     : 0;
 
   return (
@@ -61,7 +61,7 @@ export default function Layout() {
       )}
 
       <aside
-        className={`fixed z-40 flex h-full w-64 flex-col border-r border-th-border bg-th-bg-sec/90 backdrop-blur-xl transition-transform duration-300 lg:static lg:translate-x-0 ${
+        className={`fixed z-40 flex h-full w-64 flex-col border-r border-th-border bg-th-bg-sec transition-transform duration-300 lg:static lg:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
