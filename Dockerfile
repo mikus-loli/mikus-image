@@ -15,7 +15,7 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 # Install sharp native dependencies
-RUN apk add --no-cache vips-dev
+RUN apk add --no-cache vips
 
 # Install production dependencies + tsx for runtime TS support
 COPY package.json package-lock.json* ./
