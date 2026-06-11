@@ -10,23 +10,22 @@ import { getDb, query, scheduleSave, getCachedSetting, getCachedBaseUrl } from '
 import { authMiddleware } from '../middleware/auth.js'
 import { upload } from '../middleware/upload.js'
 import { getStorageByStrategyId } from '../services/storage.js'
-import { processImage, isProcessableRasterImage } from '../services/image-processor.js'
+import { processImage, isProcessableRasterImage, isConvertibleToWebp } from '../services/image-processor.js'
 
 const router = Router()
 
-function generateImageKey(originalName: string, username?: string): string {
+function generateImageKey(extension: string, username?: string): string {
   const now = new Date()
   const Y = now.getFullYear()
   const m = String(now.getMonth() + 1).padStart(2, '0')
   const d = String(now.getDate()).padStart(2, '0')
-  const ext = path.extname(originalName).toLowerCase() || '.png'
   const id = uuidv4().replace(/-/g, '').substring(0, 12)
   // Path format: username/YYYY/MM/DD/filename
   if (username) {
-    return `${username}/${Y}/${m}/${d}/${id}${ext}`
+    return `${username}/${Y}/${m}/${d}/${id}${extension}`
   }
   // Default path format: YYYY/MM/DD/filename (for admin or when isolation is disabled)
-  return `${Y}/${m}/${d}/${id}${ext}`
+  return `${Y}/${m}/${d}/${id}${extension}`
 }
 
 function generateLinks(baseUrl: string, imagePath: string, name: string): Record<string, string> {
@@ -60,7 +59,7 @@ async function processAndSaveImage(
   const enableThumbnail = getCachedSetting('enable_thumbnail') === 'true'
   const thumbnailMaxWidth = Math.max(1, parseInt(getCachedSetting('thumbnail_max_width') || '300'))
 
-  // Determine mime type
+  // Determine mime type from original extension (for processing decision)
   const ext = path.extname(originalName).toLowerCase()
   const mimeTypes: Record<string, string> = {
     '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
@@ -68,10 +67,22 @@ async function processAndSaveImage(
     '.bmp': 'image/bmp', '.ico': 'image/x-icon',
   }
   const mimeType = mimeTypes[ext] || 'image/jpeg'
+  // Output is always WebP for convertible raster images, original format for GIF/SVG/etc
+  const outputMimeType = isConvertibleToWebp(mimeType) ? 'image/webp' : mimeType
 
-  // Single-pass image processing (Jimp.read only once)
-  let processedBuffer: Buffer
+  // Get dimensions first (using image-size which supports ICO, SVG, GIF, etc.)
   let width = 0, height = 0
+  try {
+    const { imageSize } = await import('image-size')
+    const dimensions = imageSize(buffer)
+    width = dimensions.width || 0
+    height = dimensions.height || 0
+  } catch {
+    // Can't determine dimensions
+  }
+
+  // Process image
+  let processedBuffer: Buffer
   let thumbnailBuffer: Buffer | undefined
 
   if (isProcessableRasterImage(mimeType)) {
@@ -88,8 +99,6 @@ async function processAndSaveImage(
         mimeType,
       })
       processedBuffer = result.processedBuffer
-      width = result.width
-      height = result.height
       thumbnailBuffer = result.thumbnailBuffer
     } catch (err) {
       console.error('Image processing error, saving original:', err)
@@ -99,8 +108,12 @@ async function processAndSaveImage(
     processedBuffer = buffer
   }
 
-  // Generate key and upload
-  const key = generateImageKey(originalName, username)
+  // Generate key and upload - use .webp for convertible images, original ext for GIF/SVG/etc
+  const outputExt = isConvertibleToWebp(mimeType) ? '.webp' : ext
+  const storedOriginalName = isConvertibleToWebp(mimeType)
+    ? path.basename(originalName, path.extname(originalName)) + '.webp'
+    : originalName
+  const key = generateImageKey(outputExt, username)
   const storage = getStorageByStrategyId(strategyId)
   const imagePath = await storage.upload(key, processedBuffer)
 
@@ -109,7 +122,7 @@ async function processAndSaveImage(
   if (thumbnailBuffer) {
     try {
       const parsedKey = path.parse(key)
-      const thumbnailKey = path.join(parsedKey.dir, `${parsedKey.name}_thumb.jpg`).replace(/\\/g, '/')
+      const thumbnailKey = path.join(parsedKey.dir, `${parsedKey.name}_thumb.webp`).replace(/\\/g, '/')
       thumbnailUrl = await storage.upload(thumbnailKey, thumbnailBuffer)
     } catch (err) {
       console.error('Thumbnail upload error:', err)
@@ -126,8 +139,8 @@ async function processAndSaveImage(
     `INSERT INTO images (id, key, name, original_name, size, mime_type, width, height, url, thumbnail_url, strategy_id, album_id, user_id, permission, links)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      id, key, path.basename(originalName, ext), originalName,
-      processedBuffer.length, mimeType,
+      id, key, path.basename(storedOriginalName, path.extname(storedOriginalName)), storedOriginalName,
+      processedBuffer.length, outputMimeType,
       width, height, imagePath, thumbnailUrl, strategyId, albumId, userId, permission,
       JSON.stringify(links),
     ]
@@ -141,10 +154,10 @@ async function processAndSaveImage(
   return {
     id,
     key,
-    name: path.basename(originalName, ext),
-    original_name: originalName,
+    name: path.basename(storedOriginalName, path.extname(storedOriginalName)),
+    original_name: storedOriginalName,
     size: processedBuffer.length,
-    mime_type: mimeTypes[ext] || 'image/jpeg',
+    mime_type: outputMimeType,
     width,
     height,
     url: imagePath,
@@ -243,6 +256,67 @@ router.post('/url', authMiddleware, async (req: Request, res: Response): Promise
   } catch (err: any) {
     console.error('URL upload error:', err)
     res.status(500).json({ status: false, message: '从URL上传失败' })
+  }
+})
+
+/**
+ * GET /public - List public images (no auth required)
+ * Query params: page, limit, album_id (filter by album), unassigned (1=only unassigned), sort, search
+ */
+router.get('/public', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const page = parseInt(req.query.page as string) || 1
+    const limit = Math.min(parseInt(req.query.limit as string) || 24, 50)
+    const offset = (page - 1) * limit
+    const albumId = req.query.album_id as string || ''
+    const unassigned = req.query.unassigned === '1'
+    const search = req.query.search as string || ''
+    const sort = req.query.sort as string || 'newest'
+
+    let whereClause = "WHERE i.permission = 'public'"
+    const params: any[] = []
+
+    if (albumId) {
+      whereClause += ' AND i.album_id = ?'
+      params.push(albumId)
+    } else if (unassigned) {
+      whereClause += ' AND i.album_id IS NULL'
+    }
+
+    if (search) {
+      whereClause += ' AND (i.name LIKE ? OR i.original_name LIKE ?)'
+      params.push(`%${search}%`, `%${search}%`)
+    }
+
+    const orderBy = sort === 'oldest' ? 'i.created_at ASC' : 'i.size DESC'
+
+    const countResult = query(`SELECT COUNT(*) FROM images i ${whereClause}`, params)
+    const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0
+
+    const result = query(
+      `SELECT i.id, i.key, i.name, i.original_name, i.size, i.mime_type, i.width, i.height, i.url, i.thumbnail_url, i.album_id, i.permission, i.created_at, u.name as user_name
+       FROM images i LEFT JOIN users u ON i.user_id = u.id
+       ${whereClause}
+       ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    )
+
+    const images = result.length > 0 ? result[0].values.map(row => {
+      const obj = Object.fromEntries(result[0].columns.map((col, idx) => [col, row[idx]])) as Record<string, any>
+      return obj
+    }) : []
+
+    res.json({
+      status: true,
+      message: '获取成功',
+      data: {
+        images,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      },
+    })
+  } catch (err: any) {
+    console.error('Public images error:', err)
+    res.status(500).json({ status: false, message: '获取公开图片失败' })
   }
 })
 

@@ -282,10 +282,10 @@ export default function Home() {
               {isAuthenticated ? '开始上传' : '立即开始'}
             </button>
             <Link
-              to="/login"
+              to="/gallery"
               className="inline-flex items-center gap-2 rounded-full border border-th-border px-8 py-3 text-base font-medium text-th-text-sec transition-all duration-300 hover:border-th-accent hover:text-th-accent"
             >
-              了解更多
+              浏览图库
               <ChevronRight size={16} />
             </Link>
           </div>
@@ -499,7 +499,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 sm:flex-row">
           <div className="flex items-center gap-2 text-sm text-th-text-ter">
             <Camera size={14} className="text-th-accent" />
-            <span>Mikus Image Host</span>
+            <span>Mikus Image</span>
           </div>
           <div className="flex items-center gap-6 text-xs text-th-text-ter">
             <span>开源免费</span>

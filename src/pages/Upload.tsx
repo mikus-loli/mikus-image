@@ -22,18 +22,26 @@ interface UploadItem {
 
 type LinkTab = 'url' | 'markdown' | 'html' | 'bbcode';
 
+function getFullUrl(url: string): string {
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  return window.location.origin + url;
+}
+
 function generateLink(url: string, filename: string, tab: LinkTab) {
+  const fullUrl = getFullUrl(url);
   switch (tab) {
     case 'url':
-      return url;
+      return fullUrl;
     case 'markdown':
-      return `![${filename}](${url})`;
+      return `![${filename}](${fullUrl})`;
     case 'html':
-      return `<img src="${url}" alt="${filename}" />`;
+      return `<img src="${fullUrl}" alt="${filename}" />`;
     case 'bbcode':
-      return `[img]${url}[/img]`;
+      return `[img]${fullUrl}[/img]`;
     default:
-      return url;
+      return fullUrl;
   }
 }
 

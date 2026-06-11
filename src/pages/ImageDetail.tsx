@@ -135,7 +135,7 @@ export default function ImageDetail() {
             <img
               src={img.url}
               alt={img.original_name}
-              className="mx-auto max-h-[600px] w-auto object-contain"
+              className="mx-auto max-h-[600px] min-w-[200px] w-full object-contain"
             />
           </div>
         </div>

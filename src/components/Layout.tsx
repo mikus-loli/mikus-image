@@ -24,11 +24,11 @@ const navItems = [
   { to: '/upload', icon: Upload, label: '上传' },
   { to: '/images', icon: Images, label: '图片管理' },
   { to: '/albums', icon: FolderOpen, label: '相册' },
-  { to: '/profile', icon: UserCircle, label: '个人设置' },
+  { to: '/dashboard', icon: LayoutDashboard, label: '仪表盘', admin: true },
+  { to: '/users', icon: Users, label: '用户管理', admin: true },
   { to: '/strategies', icon: Server, label: '存储策略', admin: true },
   { to: '/settings', icon: Settings, label: '系统设置', admin: true },
-  { to: '/users', icon: Users, label: '用户管理', admin: true },
-  { to: '/dashboard', icon: LayoutDashboard, label: '仪表盘', admin: true },
+  { to: '/profile', icon: UserCircle, label: '个人设置' },
 ];
 
 export default function Layout() {

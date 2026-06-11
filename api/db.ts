@@ -97,6 +97,18 @@ CREATE TABLE IF NOT EXISTS settings (
   is_public INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id TEXT PRIMARY KEY,
+  operator_id TEXT NOT NULL,
+  operator_name TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id TEXT,
+  target_name TEXT,
+  detail TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null

@@ -89,8 +89,14 @@ export const strategiesApi = {
 export const usersApi = {
   getUsers: () => api.get('/users'),
   updateUser: (id: string, data: { role?: string; capacity?: number; status?: string }) =>
-    api.put(`/users/${id}`, data),
+    api.patch(`/users/${id}`, data),
   deleteUser: (id: string) => api.delete(`/users/${id}`),
+  createUser: (data: { name: string; email?: string; password: string; role?: string }) =>
+    api.post('/users', data),
+  resetPassword: (id: string, password: string) =>
+    api.post(`/users/${id}/reset-password`, { password }),
+  getAuditLogs: (params?: { page?: number; limit?: number }) =>
+    api.get('/users/audit-logs', { params }),
 };
 
 // Settings

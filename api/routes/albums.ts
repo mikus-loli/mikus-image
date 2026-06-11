@@ -9,6 +9,37 @@ import { authMiddleware } from '../middleware/auth.js'
 const router = Router()
 
 /**
+ * GET /public - List public albums (no auth required)
+ */
+router.get('/public', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const result = query(
+      `SELECT a.id, a.name, a.description, a.cover, a.created_at,
+              (SELECT COUNT(*) FROM images WHERE album_id = a.id AND permission = 'public') as image_count,
+              (SELECT thumbnail_url FROM images WHERE album_id = a.id AND permission = 'public' ORDER BY created_at DESC LIMIT 1) as latest_thumbnail
+       FROM albums a
+       WHERE a.id IN (SELECT DISTINCT album_id FROM images WHERE permission = 'public' AND album_id IS NOT NULL)
+       ORDER BY a.sort_order ASC, a.created_at DESC`
+    )
+
+    const albums = result.length > 0 ? result[0].values.map(row => ({
+      id: row[0],
+      name: row[1],
+      description: row[2],
+      cover: row[3],
+      created_at: row[4],
+      image_count: row[5],
+      latest_thumbnail: row[6],
+    })) : []
+
+    res.json({ status: true, message: '获取成功', data: albums })
+  } catch (err: any) {
+    console.error('Public albums error:', err)
+    res.status(500).json({ status: false, message: '获取公开相册失败' })
+  }
+})
+
+/**
  * GET / - List user's albums
  */
 router.get('/', authMiddleware, async (req: Request, res: Response): Promise<void> => {

@@ -17,7 +17,11 @@ export class ImageProcessingError extends Error {
 }
 
 export function isProcessableRasterImage(mimeType: string): boolean {
-  return ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp'].includes(mimeType)
+  return ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/bmp', 'image/x-icon'].includes(mimeType)
+}
+
+export function isConvertibleToWebp(mimeType: string): boolean {
+  return ['image/jpeg', 'image/jpg', 'image/png', 'image/x-icon'].includes(mimeType)
 }
 
 /**
@@ -85,9 +89,9 @@ export async function processImage(buffer: Buffer, options: {
     image.opacity(watermarkOpacity)
   }
 
-  // Get processed buffer (compress if enabled)
-  const outputMime = compress ? 'image/jpeg' : (image.mime || 'image/png')
-  const qualityOpts = compress ? { quality: compressQuality } : {}
+  // Get processed buffer - always output WebP for raster images
+  const outputMime = 'image/webp'
+  const qualityOpts = { quality: compress ? compressQuality : 80 }
   const processedBuffer = await image.getBuffer(outputMime as any, qualityOpts as any)
 
   // Generate thumbnail from the same Jimp instance (clone to avoid mutation)
@@ -100,7 +104,7 @@ export async function processImage(buffer: Buffer, options: {
         if (ratio < 1) {
           thumb.resize({ w: thumbnailMaxWidth, h: Math.max(1, Math.round(thumb.height * ratio)) })
         }
-        thumbnailBuffer = await thumb.getBuffer('image/jpeg', { quality: 70 } as any)
+        thumbnailBuffer = await thumb.getBuffer('image/webp', { quality: 70 } as any)
       } catch (err) {
         console.error('Thumbnail generation failed:', err instanceof Error ? err.message : String(err))
       }
@@ -115,7 +119,7 @@ export async function processImage(buffer: Buffer, options: {
 // Keep individual functions for backward compatibility
 export async function compressImage(buffer: Buffer, quality: number = 80): Promise<Buffer> {
   const image = await Jimp.read(buffer)
-  return await image.getBuffer('image/jpeg', { quality } as any)
+  return await image.getBuffer('image/webp', { quality } as any)
 }
 
 export async function addWatermark(
@@ -160,7 +164,7 @@ export async function addWatermark(
   image.print({ font, x, y, text })
   image.opacity(opacity)
 
-  const mime = image.mime || 'image/png'
+  const mime = 'image/webp'
   return await image.getBuffer(mime as any)
 }
 
@@ -192,7 +196,7 @@ export async function generateThumbnail(buffer: Buffer, maxWidth: number = 300):
       image.resize({ w: maxWidth, h: Math.max(1, Math.round(image.height * ratio)) })
     }
 
-    return await image.getBuffer('image/jpeg', { quality: 70 } as any)
+    return await image.getBuffer('image/webp', { quality: 70 } as any)
   } catch (err) {
     if (err instanceof ImageProcessingError) throw err
     throw new ImageProcessingError('图像处理库生成缩略图失败', err)
