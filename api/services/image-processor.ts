@@ -1,8 +1,9 @@
 /**
- * Image processing service using jimp (v1.x API)
+ * Image processing service using jimp (v1.x API) + sharp for WebP/ICO
  */
 import { Jimp, loadFont, measureText, measureTextHeight } from 'jimp'
 import { SANS_32_WHITE } from 'jimp/fonts'
+import sharp from 'sharp'
 
 export interface ImageDimensions {
   width: number
@@ -17,11 +18,37 @@ export class ImageProcessingError extends Error {
 }
 
 export function isProcessableRasterImage(mimeType: string): boolean {
-  return ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/bmp', 'image/x-icon'].includes(mimeType)
+  return ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp'].includes(mimeType)
 }
 
 export function isConvertibleToWebp(mimeType: string): boolean {
-  return ['image/jpeg', 'image/jpg', 'image/png', 'image/x-icon'].includes(mimeType)
+  return ['image/jpeg', 'image/jpg', 'image/png'].includes(mimeType)
+}
+
+/** Formats that sharp can handle for thumbnail generation */
+export function isSharpProcessable(mimeType: string): boolean {
+  return ['image/webp', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/ico'].includes(mimeType)
+}
+
+/**
+ * Generate thumbnail for WebP/ICO images using sharp.
+ * Returns { thumbnailBuffer, width, height }
+ */
+export async function generateThumbnailWithSharp(
+  buffer: Buffer,
+  maxWidth: number = 300
+): Promise<{ thumbnailBuffer: Buffer; width: number; height: number }> {
+  const metadata = await sharp(buffer).metadata()
+  const width = metadata.width || 0
+  const height = metadata.height || 0
+
+  let pipeline = sharp(buffer)
+  if (width > maxWidth) {
+    pipeline = pipeline.resize(maxWidth, null, { withoutEnlargement: true })
+  }
+  const thumbnailBuffer = await pipeline.webp({ quality: 70 }).toBuffer()
+
+  return { thumbnailBuffer, width, height }
 }
 
 /**

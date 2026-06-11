@@ -10,7 +10,7 @@ import { getDb, query, scheduleSave, getCachedSetting, getCachedBaseUrl } from '
 import { authMiddleware } from '../middleware/auth.js'
 import { upload } from '../middleware/upload.js'
 import { getStorageByStrategyId } from '../services/storage.js'
-import { processImage, isProcessableRasterImage, isConvertibleToWebp } from '../services/image-processor.js'
+import { processImage, isProcessableRasterImage, isConvertibleToWebp, isSharpProcessable, generateThumbnailWithSharp } from '../services/image-processor.js'
 
 const router = Router()
 
@@ -106,6 +106,15 @@ async function processAndSaveImage(
     }
   } else {
     processedBuffer = buffer
+    // Use sharp for WebP/ICO thumbnail generation
+    if (enableThumbnail && isSharpProcessable(mimeType)) {
+      try {
+        const result = await generateThumbnailWithSharp(buffer, thumbnailMaxWidth)
+        thumbnailBuffer = result.thumbnailBuffer
+      } catch (err) {
+        console.error('Sharp thumbnail error:', err)
+      }
+    }
   }
 
   // Generate key and upload - use .webp for convertible images, original ext for GIF/SVG/etc
