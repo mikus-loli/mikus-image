@@ -93,7 +93,7 @@ export default function Albums() {
 
       {/* Loading */}
       {isLoading && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="skeleton h-48 rounded-xl" />
           ))}
@@ -111,7 +111,7 @@ export default function Albums() {
 
       {/* Album grid */}
       {!isLoading && albums.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {albums.map((album) => (
             <div
               key={album.id}
@@ -120,9 +120,9 @@ export default function Albums() {
             >
               {/* Cover */}
               <div className="relative aspect-video overflow-hidden bg-th-bg-sec">
-                {album.cover ? (
+                {(album.cover || album.latest_thumbnail) ? (
                   <img
-                    src={album.cover}
+                    src={album.cover || album.latest_thumbnail}
                     alt={album.name}
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />

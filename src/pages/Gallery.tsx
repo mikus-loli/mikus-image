@@ -66,8 +66,9 @@ export default function Gallery() {
   const [previewImage, setPreviewImage] = useState<PublicImage | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Unassigned count
+  // Unassigned count & cover
   const [unassignedCount, setUnassignedCount] = useState(0);
+  const [unassignedCover, setUnassignedCover] = useState('');
 
   useEffect(() => {
     fetchAlbums();
@@ -86,7 +87,12 @@ export default function Gallery() {
         api.get('/images/public', { params: { unassigned: 1, limit: 1 } }),
       ]);
       setAlbums(albumRes.data.data || []);
-      setUnassignedCount(unassignedRes.data.data?.pagination?.total || 0);
+      const unassignedData = unassignedRes.data.data;
+      setUnassignedCount(unassignedData?.pagination?.total || 0);
+      const firstImage = unassignedData?.images?.[0];
+      if (firstImage) {
+        setUnassignedCover(firstImage.thumbnail_url || firstImage.url);
+      }
     } catch {
       setAlbums([]);
     }
@@ -205,9 +211,17 @@ export default function Gallery() {
                   className="group cursor-pointer overflow-hidden rounded-xl border border-th-border/40 bg-th-bg-card transition-all hover:border-th-accent/50 hover:shadow-lg"
                 >
                   <div className="relative aspect-square overflow-hidden bg-th-bg-sec">
-                    <div className="flex h-full items-center justify-center">
-                      <Grid3X3 size={40} className="text-th-text-ter/30" />
-                    </div>
+                    {unassignedCover ? (
+                      <img
+                        src={unassignedCover}
+                        alt="未分类"
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center">
+                        <Grid3X3 size={40} className="text-th-text-ter/30" />
+                      </div>
+                    )}
                   </div>
                   <div className="p-3">
                     <p className="truncate text-sm font-medium text-th-text">未分类</p>

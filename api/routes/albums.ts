@@ -16,7 +16,7 @@ router.get('/public', async (req: Request, res: Response): Promise<void> => {
     const result = query(
       `SELECT a.id, a.name, a.description, a.cover, a.created_at,
               (SELECT COUNT(*) FROM images WHERE album_id = a.id AND permission = 'public') as image_count,
-              (SELECT thumbnail_url FROM images WHERE album_id = a.id AND permission = 'public' ORDER BY created_at DESC LIMIT 1) as latest_thumbnail
+              (SELECT COALESCE(NULLIF(thumbnail_url, ''), url) FROM images WHERE album_id = a.id AND permission = 'public' ORDER BY created_at DESC LIMIT 1) as latest_thumbnail
        FROM albums a
        WHERE a.id IN (SELECT DISTINCT album_id FROM images WHERE permission = 'public' AND album_id IS NOT NULL)
        ORDER BY a.sort_order ASC, a.created_at DESC`
@@ -48,7 +48,8 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
     const user = req.user!
 
     const result = query(
-      `SELECT a.*, (SELECT COUNT(*) FROM images WHERE album_id = a.id) as image_count
+      `SELECT a.*, (SELECT COUNT(*) FROM images WHERE album_id = a.id) as image_count,
+              (SELECT COALESCE(NULLIF(thumbnail_url, ''), url) FROM images WHERE album_id = a.id ORDER BY created_at DESC LIMIT 1) as latest_thumbnail
        FROM albums a WHERE a.user_id = ? ORDER BY a.sort_order ASC, a.created_at DESC`,
       [user.id]
     )
@@ -63,6 +64,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
       created_at: row[6],
       updated_at: row[7],
       image_count: row[8],
+      latest_thumbnail: row[9],
     })) : []
 
     res.json({ status: true, message: '获取成功', data: albums })

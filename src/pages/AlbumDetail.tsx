@@ -121,16 +121,7 @@ export default function AlbumDetail() {
       </div>
 
       {/* Stats */}
-      <div className="flex gap-4">
-        <div className="glass-card px-4 py-3">
-          <p className="text-xs text-th-text-ter">图片数量</p>
-          <p className="text-lg font-bold text-th-accent">{Number(album.image_count || 0)}</p>
-        </div>
-        <div className="glass-card px-4 py-3">
-          <p className="text-xs text-th-text-ter">权限</p>
-          <p className="text-lg font-bold text-th-text">{album.permission === 'public' ? '公开' : '私有'}</p>
-        </div>
-      </div>
+
 
       {/* Images grid */}
       {images.length === 0 ? (
@@ -140,7 +131,7 @@ export default function AlbumDetail() {
           <p className="mt-1 text-sm">上传图片时选择此相册即可添加</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8">
           {images.map((img) => (
             <div
               key={img.id}

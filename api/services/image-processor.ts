@@ -92,7 +92,7 @@ export async function processImage(buffer: Buffer, options: {
   // Get processed buffer - always output WebP for raster images
   const outputMime = 'image/webp'
   const qualityOpts = { quality: compress ? compressQuality : 80 }
-  const processedBuffer = await image.getBuffer(outputMime as any, qualityOpts as any)
+  const processedBuffer = await (image.getBuffer as any)(outputMime, qualityOpts)
 
   // Generate thumbnail from the same Jimp instance (clone to avoid mutation)
   let thumbnailBuffer: Buffer | undefined
@@ -165,7 +165,7 @@ export async function addWatermark(
   image.opacity(opacity)
 
   const mime = 'image/webp'
-  return await image.getBuffer(mime as any)
+  return await (image.getBuffer as any)(mime)
 }
 
 export async function getImageDimensions(buffer: Buffer): Promise<ImageDimensions> {
