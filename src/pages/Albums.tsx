@@ -18,6 +18,7 @@ interface Album {
   imageCount?: number;
   permission: string;
   created_at: string;
+  latest_thumbnail?: string;
 }
 
 export default function Albums() {
