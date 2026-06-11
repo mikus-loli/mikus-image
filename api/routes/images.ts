@@ -288,7 +288,7 @@ router.get('/public', async (req: Request, res: Response): Promise<void> => {
       params.push(`%${search}%`, `%${search}%`)
     }
 
-    const orderBy = sort === 'oldest' ? 'i.created_at ASC' : 'i.size DESC'
+    const orderBy = sort === 'oldest' ? 'i.created_at ASC' : 'i.created_at DESC'
 
     const countResult = query(`SELECT COUNT(*) FROM images i ${whereClause}`, params)
     const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0

@@ -104,7 +104,7 @@ export async function processImage(buffer: Buffer, options: {
         if (ratio < 1) {
           thumb.resize({ w: thumbnailMaxWidth, h: Math.max(1, Math.round(thumb.height * ratio)) })
         }
-        thumbnailBuffer = await thumb.getBuffer('image/webp', { quality: 70 } as any)
+        thumbnailBuffer = await (thumb.getBuffer as any)('image/webp', { quality: 70 })
       } catch (err) {
         console.error('Thumbnail generation failed:', err instanceof Error ? err.message : String(err))
       }
@@ -119,7 +119,7 @@ export async function processImage(buffer: Buffer, options: {
 // Keep individual functions for backward compatibility
 export async function compressImage(buffer: Buffer, quality: number = 80): Promise<Buffer> {
   const image = await Jimp.read(buffer)
-  return await image.getBuffer('image/webp', { quality } as any)
+  return await (image.getBuffer as any)('image/webp', { quality })
 }
 
 export async function addWatermark(
@@ -196,7 +196,7 @@ export async function generateThumbnail(buffer: Buffer, maxWidth: number = 300):
       image.resize({ w: maxWidth, h: Math.max(1, Math.round(image.height * ratio)) })
     }
 
-    return await image.getBuffer('image/webp', { quality: 70 } as any)
+    return await (image.getBuffer as any)('image/webp', { quality: 70 })
   } catch (err) {
     if (err instanceof ImageProcessingError) throw err
     throw new ImageProcessingError('图像处理库生成缩略图失败', err)
