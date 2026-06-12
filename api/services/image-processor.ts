@@ -22,33 +22,44 @@ export function isProcessableRasterImage(mimeType: string): boolean {
 }
 
 export function isConvertibleToWebp(mimeType: string): boolean {
-  return ['image/jpeg', 'image/jpg', 'image/png'].includes(mimeType)
+  return ['image/jpeg', 'image/jpg', 'image/png', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/ico'].includes(mimeType)
 }
 
-/** Formats that sharp can handle for thumbnail generation */
+/** Formats that sharp can handle for thumbnail generation and WebP conversion */
 export function isSharpProcessable(mimeType: string): boolean {
-  return ['image/webp', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/ico'].includes(mimeType)
+  return ['image/webp', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/ico', 'image/svg+xml'].includes(mimeType)
 }
 
 /**
- * Generate thumbnail for WebP/ICO images using sharp.
- * Returns { thumbnailBuffer, width, height }
+ * Convert SVG/WebP/ICO to WebP using sharp.
+ * Returns { processedBuffer, width, height, thumbnailBuffer? }
  */
-export async function generateThumbnailWithSharp(
+export async function processWithSharp(
   buffer: Buffer,
-  maxWidth: number = 300
-): Promise<{ thumbnailBuffer: Buffer; width: number; height: number }> {
+  options: {
+    thumbnail?: boolean
+    thumbnailMaxWidth?: number
+  } = {}
+): Promise<{ processedBuffer: Buffer; width: number; height: number; thumbnailBuffer?: Buffer }> {
   const metadata = await sharp(buffer).metadata()
   const width = metadata.width || 0
   const height = metadata.height || 0
 
-  let pipeline = sharp(buffer)
-  if (width > maxWidth) {
-    pipeline = pipeline.resize(maxWidth, null, { withoutEnlargement: true })
-  }
-  const thumbnailBuffer = await pipeline.webp({ quality: 70 }).toBuffer()
+  // Convert to WebP
+  const processedBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer()
 
-  return { thumbnailBuffer, width, height }
+  // Generate thumbnail if needed
+  let thumbnailBuffer: Buffer | undefined
+  if (options.thumbnail) {
+    const maxWidth = options.thumbnailMaxWidth || 300
+    let pipeline = sharp(buffer)
+    if (width > maxWidth) {
+      pipeline = pipeline.resize(maxWidth, null, { withoutEnlargement: true })
+    }
+    thumbnailBuffer = await pipeline.webp({ quality: 70 }).toBuffer()
+  }
+
+  return { processedBuffer, width, height, thumbnailBuffer }
 }
 
 /**

@@ -10,7 +10,7 @@ import { getDb, query, scheduleSave, getCachedSetting, getCachedBaseUrl } from '
 import { authMiddleware } from '../middleware/auth.js'
 import { upload } from '../middleware/upload.js'
 import { getStorageByStrategyId } from '../services/storage.js'
-import { processImage, isProcessableRasterImage, isConvertibleToWebp, isSharpProcessable, generateThumbnailWithSharp } from '../services/image-processor.js'
+import { processImage, isProcessableRasterImage, isConvertibleToWebp, isSharpProcessable, processWithSharp } from '../services/image-processor.js'
 
 const router = Router()
 
@@ -67,8 +67,8 @@ async function processAndSaveImage(
     '.bmp': 'image/bmp', '.ico': 'image/x-icon',
   }
   const mimeType = mimeTypes[ext] || 'image/jpeg'
-  // Output is always WebP for convertible raster images, original format for GIF/SVG/etc
-  const outputMimeType = isConvertibleToWebp(mimeType) ? 'image/webp' : mimeType
+  // Output is always WebP for convertible images (JPG/PNG/ICO/SVG/WebP)
+  const outputMimeType = isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType) ? 'image/webp' : mimeType
 
   // Get dimensions first (using image-size which supports ICO, SVG, GIF, etc.)
   let width = 0, height = 0
@@ -104,22 +104,29 @@ async function processAndSaveImage(
       console.error('Image processing error, saving original:', err)
       processedBuffer = buffer
     }
+  } else if (isSharpProcessable(mimeType)) {
+    // Use sharp for WebP/ICO/SVG - convert to WebP and generate thumbnail
+    try {
+      const result = await processWithSharp(buffer, {
+        thumbnail: enableThumbnail,
+        thumbnailMaxWidth,
+      })
+      processedBuffer = result.processedBuffer
+      thumbnailBuffer = result.thumbnailBuffer
+      // Update dimensions from sharp
+      width = result.width
+      height = result.height
+    } catch (err) {
+      console.error('Sharp processing error, saving original:', err)
+      processedBuffer = buffer
+    }
   } else {
     processedBuffer = buffer
-    // Use sharp for WebP/ICO thumbnail generation
-    if (enableThumbnail && isSharpProcessable(mimeType)) {
-      try {
-        const result = await generateThumbnailWithSharp(buffer, thumbnailMaxWidth)
-        thumbnailBuffer = result.thumbnailBuffer
-      } catch (err) {
-        console.error('Sharp thumbnail error:', err)
-      }
-    }
   }
 
-  // Generate key and upload - use .webp for convertible images, original ext for GIF/SVG/etc
-  const outputExt = isConvertibleToWebp(mimeType) ? '.webp' : ext
-  const storedOriginalName = isConvertibleToWebp(mimeType)
+  // Generate key and upload - use .webp for convertible images, original ext for GIF/etc
+  const outputExt = isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType) ? '.webp' : ext
+  const storedOriginalName = isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType)
     ? path.basename(originalName, path.extname(originalName)) + '.webp'
     : originalName
   const key = generateImageKey(outputExt, username)
