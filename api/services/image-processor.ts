@@ -41,20 +41,21 @@ function createWatermarkSvg(
   const fontSize = Math.max(16, Math.min(32, Math.floor(width / 20)))
   const padding = 10
   let x: number, y: number
+  let baseline: 'text-before-edge' | 'middle' | 'text-after-edge'
 
   switch (position) {
-    case 'top-left': x = padding; y = fontSize + padding; break
-    case 'top-right': x = width - padding; y = fontSize + padding; break
-    case 'bottom-left': x = padding; y = height - padding; break
-    case 'center': x = width / 2; y = height / 2; break
+    case 'top-left': x = padding; y = padding; baseline = 'text-before-edge'; break
+    case 'top-right': x = width - padding; y = padding; baseline = 'text-before-edge'; break
+    case 'bottom-left': x = padding; y = height - padding; baseline = 'text-after-edge'; break
+    case 'center': x = width / 2; y = height / 2; baseline = 'middle'; break
     case 'bottom-right':
-    default: x = width - padding; y = height - padding; break
+    default: x = width - padding; y = height - padding; baseline = 'text-after-edge'; break
   }
 
   const anchor = position.includes('right') ? 'end' : position === 'center' ? 'middle' : 'start'
 
   const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <text x="${x}" y="${y}" font-family="sans-serif" font-size="${fontSize}" fill="white" opacity="${opacity}" text-anchor="${anchor}">${escapeXml(text)}</text>
+    <text x="${x}" y="${y}" font-family="sans-serif" font-size="${fontSize}" fill="white" opacity="${opacity}" text-anchor="${anchor}" dominant-baseline="${baseline}">${escapeXml(text)}</text>
   </svg>`
   return Buffer.from(svg)
 }
