@@ -216,7 +216,9 @@ router.post('/', authMiddleware, upload.single('image'), async (req: Request, re
     }
 
     const buffer = fs.readFileSync(req.file.path)
-    const image = await processAndSaveImage(buffer, req.file.originalname, strategyId, user.id, user.name, albumId, permission)
+    // Fix multer Latin-1 encoding issue for non-ASCII filenames (e.g. Chinese)
+    const originalName = Buffer.from(req.file.originalname, 'latin1').toString('utf-8')
+    const image = await processAndSaveImage(buffer, originalName, strategyId, user.id, user.name, albumId, permission)
 
     // Clean up temp file
     fs.unlinkSync(req.file.path)
