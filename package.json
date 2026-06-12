@@ -22,7 +22,6 @@
     "drizzle-orm": "^0.38.0",
     "express": "^4.21.2",
     "image-size": "^2.0.2",
-    "jimp": "^1.6.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.511.0",
     "mime-types": "^2.1.35",

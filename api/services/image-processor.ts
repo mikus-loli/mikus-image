@@ -1,8 +1,6 @@
 /**
- * Image processing service using jimp (v1.x API) + sharp for WebP/ICO
+ * Image processing service using sharp only
  */
-import { Jimp, loadFont, measureText, measureTextHeight } from 'jimp'
-import { SANS_32_WHITE } from 'jimp/fonts'
 import sharp from 'sharp'
 
 export interface ImageDimensions {
@@ -17,59 +15,59 @@ export class ImageProcessingError extends Error {
   }
 }
 
+/** JPG/PNG/BMP - raster images that support watermark */
 export function isProcessableRasterImage(mimeType: string): boolean {
   return ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp'].includes(mimeType)
 }
 
+/** All formats that should be converted to WebP */
 export function isConvertibleToWebp(mimeType: string): boolean {
   return ['image/jpeg', 'image/jpg', 'image/png', 'image/svg+xml', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/ico'].includes(mimeType)
 }
 
-/** Formats that sharp can handle for thumbnail generation and WebP conversion */
+/** Formats that only sharp can handle (WebP/ICO/SVG) */
 export function isSharpProcessable(mimeType: string): boolean {
   return ['image/webp', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/ico', 'image/svg+xml'].includes(mimeType)
 }
 
-/**
- * Convert SVG/WebP/ICO to WebP using sharp.
- * Returns { processedBuffer, width, height, thumbnailBuffer? }
- */
-export async function processWithSharp(
-  buffer: Buffer,
-  options: {
-    thumbnail?: boolean
-    thumbnailMaxWidth?: number
-  } = {}
-): Promise<{ processedBuffer: Buffer; width: number; height: number; thumbnailBuffer?: Buffer }> {
-  const metadata = await sharp(buffer).metadata()
-  const width = metadata.width || 0
-  const height = metadata.height || 0
+/** Create an SVG watermark overlay buffer */
+function createWatermarkSvg(
+  text: string,
+  width: number,
+  height: number,
+  position: string = 'bottom-right',
+  opacity: number = 0.3
+): Buffer {
+  const fontSize = Math.max(16, Math.min(32, Math.floor(width / 20)))
+  const padding = 10
+  let x: number, y: number
 
-  // Convert to WebP
-  const processedBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer()
-
-  // Generate thumbnail if needed
-  let thumbnailBuffer: Buffer | undefined
-  if (options.thumbnail) {
-    const maxWidth = options.thumbnailMaxWidth || 300
-    let pipeline = sharp(buffer)
-    if (width > maxWidth) {
-      pipeline = pipeline.resize(maxWidth, null, { withoutEnlargement: true })
-    }
-    thumbnailBuffer = await pipeline.webp({ quality: 70 }).toBuffer()
+  switch (position) {
+    case 'top-left': x = padding; y = fontSize + padding; break
+    case 'top-right': x = width - padding; y = fontSize + padding; break
+    case 'bottom-left': x = padding; y = height - padding; break
+    case 'center': x = width / 2; y = height / 2; break
+    case 'bottom-right':
+    default: x = width - padding; y = height - padding; break
   }
 
-  return { processedBuffer, width, height, thumbnailBuffer }
+  const anchor = position.includes('right') ? 'end' : position === 'center' ? 'middle' : 'start'
+
+  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+    <text x="${x}" y="${y}" font-family="sans-serif" font-size="${fontSize}" fill="white" opacity="${opacity}" text-anchor="${anchor}">${escapeXml(text)}</text>
+  </svg>`
+  return Buffer.from(svg)
+}
+
+function escapeXml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
 /**
- * Process image in a single Jimp.read() pass:
- * 1. Compress (JPEG quality)
- * 2. Add watermark
- * 3. Get dimensions
- * 4. Generate thumbnail
- *
- * Returns { processedBuffer, width, height, thumbnailBuffer? }
+ * Process image using sharp:
+ * 1. Add watermark (raster images only)
+ * 2. Convert to WebP
+ * 3. Generate thumbnail
  */
 export async function processImage(buffer: Buffer, options: {
   compress?: boolean
@@ -97,67 +95,74 @@ export async function processImage(buffer: Buffer, options: {
     watermarkOpacity = 0.3,
     thumbnail: enableThumbnail = false,
     thumbnailMaxWidth = 300,
-    mimeType = 'image/jpeg',
-    maxFileSize = 50 * 1024 * 1024,
   } = options
 
-  // Read image once
-  const image = await Jimp.read(buffer)
-  const width = image.width || 0
-  const height = image.height || 0
+  const metadata = await sharp(buffer).metadata()
+  const width = metadata.width || 0
+  const height = metadata.height || 0
 
-  // Add watermark (before compression so it gets compressed too)
-  if (enableWatermark) {
-    const font = await loadFont(SANS_32_WHITE)
-    const textWidth = measureText(font, watermarkText)
-    const textHeight = measureTextHeight(font, watermarkText, textWidth)
-    const padding = 10
-    let x: number, y: number
+  let pipeline = sharp(buffer)
 
-    switch (watermarkPosition) {
-      case 'top-left': x = padding; y = padding; break
-      case 'top-right': x = image.width - textWidth - padding; y = padding; break
-      case 'bottom-left': x = padding; y = image.height - textHeight - padding; break
-      case 'center': x = (image.width - textWidth) / 2; y = (image.height - textHeight) / 2; break
-      case 'bottom-right':
-      default: x = image.width - textWidth - padding; y = image.height - textHeight - padding; break
-    }
-
-    image.print({ font, x, y, text: watermarkText })
-    image.opacity(watermarkOpacity)
+  // Add watermark for raster images
+  if (enableWatermark && width > 0 && height > 0) {
+    const watermarkSvg = createWatermarkSvg(watermarkText, width, height, watermarkPosition, watermarkOpacity)
+    pipeline = pipeline.composite([{
+      input: watermarkSvg,
+      blend: 'over',
+    }])
   }
 
-  // Get processed buffer - always output WebP for raster images
-  const outputMime = 'image/webp'
-  const qualityOpts = { quality: compress ? compressQuality : 80 }
-  const processedBuffer = await (image.getBuffer as any)(outputMime, qualityOpts)
+  const quality = compress ? compressQuality : 80
+  const processedBuffer = await pipeline.webp({ quality }).toBuffer()
 
-  // Generate thumbnail from the same Jimp instance (clone to avoid mutation)
+  // Generate thumbnail
   let thumbnailBuffer: Buffer | undefined
-  if (enableThumbnail && isProcessableRasterImage(mimeType)) {
-    if (buffer.length <= maxFileSize && width > 0 && height > 0 && width * height <= 80_000_000) {
-      try {
-        const thumb = image.clone()
-        const ratio = thumbnailMaxWidth / thumb.width
-        if (ratio < 1) {
-          thumb.resize({ w: thumbnailMaxWidth, h: Math.max(1, Math.round(thumb.height * ratio)) })
-        }
-        thumbnailBuffer = await (thumb.getBuffer as any)('image/webp', { quality: 70 })
-      } catch (err) {
-        console.error('Thumbnail generation failed:', err instanceof Error ? err.message : String(err))
-      }
-    } else {
-      console.warn('Thumbnail skipped: file too large or dimensions too large')
+  if (enableThumbnail && width > 0) {
+    try {
+      const maxWidth = thumbnailMaxWidth
+      thumbnailBuffer = await sharp(buffer)
+        .resize(maxWidth, null, { withoutEnlargement: true })
+        .webp({ quality: 70 })
+        .toBuffer()
+    } catch (err) {
+      console.error('Thumbnail generation failed:', err instanceof Error ? err.message : String(err))
     }
   }
 
   return { processedBuffer, width, height, thumbnailBuffer }
 }
 
-// Keep individual functions for backward compatibility
+/**
+ * Process WebP/ICO/SVG using sharp - convert to WebP + thumbnail
+ */
+export async function processWithSharp(
+  buffer: Buffer,
+  options: {
+    thumbnail?: boolean
+    thumbnailMaxWidth?: number
+  } = {}
+): Promise<{ processedBuffer: Buffer; width: number; height: number; thumbnailBuffer?: Buffer }> {
+  const metadata = await sharp(buffer).metadata()
+  const width = metadata.width || 0
+  const height = metadata.height || 0
+
+  const processedBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer()
+
+  let thumbnailBuffer: Buffer | undefined
+  if (options.thumbnail) {
+    const maxWidth = options.thumbnailMaxWidth || 300
+    let pipeline = sharp(buffer)
+    if (width > maxWidth) {
+      pipeline = pipeline.resize(maxWidth, null, { withoutEnlargement: true })
+    }
+    thumbnailBuffer = await pipeline.webp({ quality: 70 }).toBuffer()
+  }
+
+  return { processedBuffer, width, height, thumbnailBuffer }
+}
+
 export async function compressImage(buffer: Buffer, quality: number = 80): Promise<Buffer> {
-  const image = await Jimp.read(buffer)
-  return await (image.getBuffer as any)('image/webp', { quality })
+  return await sharp(buffer).webp({ quality }).toBuffer()
 }
 
 export async function addWatermark(
@@ -166,51 +171,26 @@ export async function addWatermark(
   position: string = 'bottom-right',
   opacity: number = 0.3
 ): Promise<Buffer> {
-  const image = await Jimp.read(buffer)
-  const font = await loadFont(SANS_32_WHITE)
+  const metadata = await sharp(buffer).metadata()
+  const width = metadata.width || 0
+  const height = metadata.height || 0
 
-  const textWidth = measureText(font, text)
-  const textHeight = measureTextHeight(font, text, textWidth)
-
-  let x: number, y: number
-  const padding = 10
-
-  switch (position) {
-    case 'top-left':
-      x = padding
-      y = padding
-      break
-    case 'top-right':
-      x = image.width - textWidth - padding
-      y = padding
-      break
-    case 'bottom-left':
-      x = padding
-      y = image.height - textHeight - padding
-      break
-    case 'center':
-      x = (image.width - textWidth) / 2
-      y = (image.height - textHeight) / 2
-      break
-    case 'bottom-right':
-    default:
-      x = image.width - textWidth - padding
-      y = image.height - textHeight - padding
-      break
+  if (width === 0 || height === 0) {
+    return await sharp(buffer).webp().toBuffer()
   }
 
-  image.print({ font, x, y, text })
-  image.opacity(opacity)
-
-  const mime = 'image/webp'
-  return await (image.getBuffer as any)(mime)
+  const watermarkSvg = createWatermarkSvg(text, width, height, position, opacity)
+  return await sharp(buffer)
+    .composite([{ input: watermarkSvg, blend: 'over' }])
+    .webp()
+    .toBuffer()
 }
 
 export async function getImageDimensions(buffer: Buffer): Promise<ImageDimensions> {
-  const image = await Jimp.read(buffer)
+  const metadata = await sharp(buffer).metadata()
   return {
-    width: image.width,
-    height: image.height,
+    width: metadata.width || 0,
+    height: metadata.height || 0,
   }
 }
 
@@ -224,17 +204,10 @@ export async function generateThumbnail(buffer: Buffer, maxWidth: number = 300):
   }
 
   try {
-    const image = await Jimp.read(buffer)
-    if (!image.width || !image.height) {
-      throw new ImageProcessingError('无法读取图片尺寸')
-    }
-
-    const ratio = maxWidth / image.width
-    if (ratio < 1) {
-      image.resize({ w: maxWidth, h: Math.max(1, Math.round(image.height * ratio)) })
-    }
-
-    return await (image.getBuffer as any)('image/webp', { quality: 70 })
+    return await sharp(buffer)
+      .resize(maxWidth, null, { withoutEnlargement: true })
+      .webp({ quality: 70 })
+      .toBuffer()
   } catch (err) {
     if (err instanceof ImageProcessingError) throw err
     throw new ImageProcessingError('图像处理库生成缩略图失败', err)
