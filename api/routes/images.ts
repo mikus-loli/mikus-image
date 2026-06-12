@@ -68,7 +68,7 @@ async function processAndSaveImage(
   }
   const mimeType = mimeTypes[ext] || 'image/jpeg'
   // Output is always WebP for convertible images (JPG/PNG/ICO/SVG/WebP)
-  const outputMimeType = isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType) ? 'image/webp' : mimeType
+  const outputMimeType = (isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType)) ? 'image/webp' : mimeType
 
   // Get dimensions first (using image-size which supports ICO, SVG, GIF, etc.)
   let width = 0, height = 0
@@ -125,8 +125,8 @@ async function processAndSaveImage(
   }
 
   // Generate key and upload - use .webp for convertible images, original ext for GIF/etc
-  const outputExt = isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType) ? '.webp' : ext
-  const storedOriginalName = isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType)
+  const outputExt = (isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType)) ? '.webp' : ext
+  const storedOriginalName = (isConvertibleToWebp(mimeType) || isSharpProcessable(mimeType))
     ? path.basename(originalName, path.extname(originalName)) + '.webp'
     : originalName
   const key = generateImageKey(outputExt, username)
