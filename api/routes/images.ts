@@ -4,15 +4,104 @@
 import { Router, type Request, type Response } from 'express'
 import fs from 'fs'
 import path from 'path'
+import sharp from 'sharp'
 import { v4 as uuidv4 } from 'uuid'
 import axios from 'axios'
 import { getDb, query, scheduleSave, getCachedSetting, getCachedBaseUrl } from '../db.js'
-import { authMiddleware } from '../middleware/auth.js'
+import { authMiddleware, adminMiddleware } from '../middleware/auth.js'
 import { upload } from '../middleware/upload.js'
 import { getStorageByStrategyId } from '../services/storage.js'
 import { processImage, isProcessableRasterImage, isConvertibleToWebp, isSharpProcessable, processWithSharp } from '../services/image-processor.js'
+import {
+  evaluateImage,
+  type NsfwResult,
+} from '../services/nsfw.js'
 
 const router = Router()
+
+/** Thrown when an upload is rejected by the NSFW policy. */
+class NsfwRejectedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NsfwRejectedError'
+  }
+}
+
+/** Thrown when the NSFW service is unavailable and degrade mode is "block". */
+class NsfwServiceUnavailableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NsfwServiceUnavailableError'
+  }
+}
+
+interface NsfwPolicy {
+  enabled: boolean
+  threshold: number
+  action: 'reject' | 'flag' | 'blur'
+  classes: string[]
+  degradeMode: 'allow' | 'block'
+  blurRadius: number
+}
+
+function getNsfwPolicy(): NsfwPolicy {
+  const threshold = parseFloat(getCachedSetting('nsfw_threshold') || '0.5')
+  const action = (getCachedSetting('nsfw_action') || 'reject') as NsfwPolicy['action']
+  const classes = (getCachedSetting('nsfw_classes') || 'Hentai,Porn,Sexy')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const degradeMode = (getCachedSetting('nsfw_degrade_mode') || 'allow') as NsfwPolicy['degradeMode']
+  const blurRadius = Math.max(1, parseInt(getCachedSetting('nsfw_blur_radius') || '20'))
+  return {
+    enabled: getCachedSetting('nsfw_enabled') === 'true',
+    threshold: Number.isFinite(threshold) ? threshold : 0.5,
+    action,
+    classes,
+    degradeMode,
+    blurRadius,
+  }
+}
+
+/** Insert a row into nsfw_logs. */
+function logNsfwDetection(params: {
+  imageId: string | null
+  originalName: string
+  userId: string
+  userName: string
+  result: NsfwResult | null
+  action: string
+  detail?: string
+}): void {
+  const db = getDb()
+  const id = uuidv4()
+  const { result } = params
+  const scores = result
+    ? JSON.stringify(Object.fromEntries(result.predictions.map((p) => [p.className, p.probability])))
+    : '{}'
+  // Use JS ISO timestamp (with timezone 'Z') instead of SQLite datetime('now')
+  // which returns UTC without timezone marker and is misparsed by the frontend.
+  const createdAt = new Date().toISOString()
+  db.run(
+    `INSERT INTO nsfw_logs (id, image_id, original_name, user_id, user_name, top_class, max_score, scores, is_nsfw, action, detail, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      params.imageId,
+      params.originalName,
+      params.userId,
+      params.userName,
+      result ? result.topClass : 'Unknown',
+      result ? result.maxNsfwScore : 0,
+      scores,
+      result ? (result.isNsfw ? 1 : 0) : 0,
+      params.action,
+      params.detail || '',
+      createdAt,
+    ]
+  )
+  scheduleSave()
+}
 
 function generateImageKey(extension: string, username?: string): string {
   const now = new Date()
@@ -61,6 +150,87 @@ async function processAndSaveImage(
   const enableThumbnail = getCachedSetting('enable_thumbnail') === 'true'
   const thumbnailMaxWidth = Math.max(1, parseInt(getCachedSetting('thumbnail_max_width') || '300'))
 
+  // Generate the image id up front so NSFW logs can reference it even on rejection.
+  const id = uuidv4()
+
+  // ── NSFW content moderation ──────────────────────────────────────────
+  // Runs on the original buffer before any processing/storage. On service
+  // failure, falls back according to the configured degrade mode.
+  const nsfwPolicy = getNsfwPolicy()
+  let workingBuffer = buffer
+  let nsfwFlagged = 0
+  if (nsfwPolicy.enabled) {
+    try {
+      const result = await evaluateImage(buffer, nsfwPolicy.classes, nsfwPolicy.threshold)
+      if (result.isNsfw) {
+        if (nsfwPolicy.action === 'reject') {
+          logNsfwDetection({
+            imageId: null,
+            originalName,
+            userId,
+            userName: username,
+            result,
+            action: 'reject',
+            detail: `命中类别 ${result.topClass}，分数 ${result.maxNsfwScore.toFixed(3)} ≥ 阈值 ${nsfwPolicy.threshold}`,
+          })
+          throw new NsfwRejectedError('图片内容不合规，已拒绝上传')
+        }
+        if (nsfwPolicy.action === 'blur') {
+          workingBuffer = await sharp(buffer).blur(nsfwPolicy.blurRadius).toBuffer()
+          nsfwFlagged = 1
+          logNsfwDetection({
+            imageId: id,
+            originalName,
+            userId,
+            userName: username,
+            result,
+            action: 'blur',
+            detail: `已模糊处理，半径 ${nsfwPolicy.blurRadius}px`,
+          })
+        } else {
+          // flag
+          nsfwFlagged = 1
+          logNsfwDetection({
+            imageId: id,
+            originalName,
+            userId,
+            userName: username,
+            result,
+            action: 'flag',
+            detail: `图片已标记待审核`,
+          })
+        }
+      } else {
+        logNsfwDetection({
+          imageId: id,
+          originalName,
+          userId,
+          userName: username,
+          result,
+          action: 'allow',
+        })
+      }
+    } catch (err) {
+      // Service unavailable — apply degrade mode.
+      if (err instanceof NsfwRejectedError) throw err
+      if (err instanceof NsfwServiceUnavailableError) throw err
+      console.error('[NSFW] detection failed, applying degrade mode:', err)
+      logNsfwDetection({
+        imageId: id,
+        originalName,
+        userId,
+        userName: username,
+        result: null,
+        action: 'degrade',
+        detail: err instanceof Error ? err.message : String(err),
+      })
+      if (nsfwPolicy.degradeMode === 'block') {
+        throw new NsfwServiceUnavailableError('内容检测服务不可用，已暂停上传')
+      }
+      // degradeMode === 'allow': continue with the original buffer
+    }
+  }
+
   // Determine mime type from original extension (for processing decision)
   const ext = path.extname(originalName).toLowerCase()
   const mimeTypes: Record<string, string> = {
@@ -76,7 +246,7 @@ async function processAndSaveImage(
   let width = 0, height = 0
   try {
     const { imageSize } = await import('image-size')
-    const dimensions = imageSize(buffer)
+    const dimensions = imageSize(workingBuffer)
     width = dimensions.width || 0
     height = dimensions.height || 0
   } catch {
@@ -89,7 +259,7 @@ async function processAndSaveImage(
 
   if (isProcessableRasterImage(mimeType)) {
     try {
-      const result = await processImage(buffer, {
+      const result = await processImage(workingBuffer, {
         compress: enableCompress,
         compressQuality,
         watermark: enableWatermark,
@@ -104,12 +274,12 @@ async function processAndSaveImage(
       thumbnailBuffer = result.thumbnailBuffer
     } catch (err) {
       console.error('Image processing error, saving original:', err)
-      processedBuffer = buffer
+      processedBuffer = workingBuffer
     }
   } else if (isSharpProcessable(mimeType)) {
     // Use sharp for WebP/ICO/SVG - convert to WebP and generate thumbnail
     try {
-      const result = await processWithSharp(buffer, {
+      const result = await processWithSharp(workingBuffer, {
         thumbnail: enableThumbnail,
         thumbnailMaxWidth,
         watermark: enableWatermark,
@@ -124,10 +294,10 @@ async function processAndSaveImage(
       height = result.height
     } catch (err) {
       console.error('Sharp processing error, saving original:', err)
-      processedBuffer = buffer
+      processedBuffer = workingBuffer
     }
   } else {
-    processedBuffer = buffer
+    processedBuffer = workingBuffer
   }
 
   // Generate key and upload - use .webp for convertible images, original ext for GIF/etc
@@ -155,16 +325,14 @@ async function processAndSaveImage(
   const links = generateLinks(baseUrl, imagePath, originalName)
 
   // Save to database
-  const id = uuidv4()
-
   db.run(
-    `INSERT INTO images (id, key, name, original_name, size, mime_type, width, height, url, thumbnail_url, strategy_id, album_id, user_id, permission, links)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO images (id, key, name, original_name, size, mime_type, width, height, url, thumbnail_url, strategy_id, album_id, user_id, permission, links, nsfw_flagged)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id, key, path.basename(storedOriginalName, path.extname(storedOriginalName)), storedOriginalName,
       processedBuffer.length, outputMimeType,
       width, height, imagePath, thumbnailUrl, strategyId, albumId, userId, permission,
-      JSON.stringify(links),
+      JSON.stringify(links), nsfwFlagged,
     ]
   )
 
@@ -188,6 +356,7 @@ async function processAndSaveImage(
     strategy_id: strategyId,
     album_id: albumId,
     permission,
+    nsfw_flagged: nsfwFlagged,
     created_at: new Date().toISOString(),
   }
 }
@@ -235,6 +404,14 @@ router.post('/', authMiddleware, upload.single('image'), async (req: Request, re
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path)
     }
+    if (err instanceof NsfwRejectedError) {
+      res.status(403).json({ status: false, message: err.message })
+      return
+    }
+    if (err instanceof NsfwServiceUnavailableError) {
+      res.status(503).json({ status: false, message: err.message })
+      return
+    }
     res.status(500).json({ status: false, message: '上传失败' })
   }
 })
@@ -279,6 +456,14 @@ router.post('/url', authMiddleware, async (req: Request, res: Response): Promise
     res.status(201).json({ status: true, message: '上传成功', data: image })
   } catch (err: any) {
     console.error('URL upload error:', err)
+    if (err instanceof NsfwRejectedError) {
+      res.status(403).json({ status: false, message: err.message })
+      return
+    }
+    if (err instanceof NsfwServiceUnavailableError) {
+      res.status(503).json({ status: false, message: err.message })
+      return
+    }
     res.status(500).json({ status: false, message: '从URL上传失败' })
   }
 })
@@ -421,6 +606,171 @@ router.get('/', authMiddleware, async (req: Request, res: Response): Promise<voi
   } catch (err: any) {
     console.error('List images error:', err)
     res.status(500).json({ status: false, message: '获取图片列表失败' })
+  }
+})
+
+/**
+ * GET /nsfw-logs - List NSFW detection logs (admin only)
+ * Query params: page, limit, action, is_nsfw (0|1), search
+ *
+ * NOTE: Must be defined before /:id, otherwise "nsfw-logs" is captured as an
+ * image id parameter and returns 404.
+ */
+router.get('/nsfw-logs', authMiddleware, adminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const page = parseInt(req.query.page as string) || 1
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100)
+    const offset = (page - 1) * limit
+    const action = req.query.action as string || ''
+    const isNsfw = req.query.is_nsfw as string || ''
+    const search = req.query.search as string || ''
+
+    let whereClause = 'WHERE 1=1'
+    const params: any[] = []
+
+    if (action) {
+      whereClause += ' AND action = ?'
+      params.push(action)
+    }
+    if (isNsfw === '0' || isNsfw === '1') {
+      whereClause += ' AND is_nsfw = ?'
+      params.push(parseInt(isNsfw))
+    }
+    if (search) {
+      whereClause += ' AND (original_name LIKE ? OR user_name LIKE ? OR top_class LIKE ?)'
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`)
+    }
+
+    const countResult = query(`SELECT COUNT(*) FROM nsfw_logs ${whereClause}`, params)
+    const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0
+
+    const result = query(
+      `SELECT id, image_id, original_name, user_id, user_name, top_class, max_score, scores, is_nsfw, action, detail, created_at
+       FROM nsfw_logs ${whereClause}
+       ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    )
+
+    const logs = result.length > 0 ? result[0].values.map((row) => {
+      const obj = Object.fromEntries(result[0].columns.map((col, idx) => [col, row[idx]])) as Record<string, any>
+      obj.scores = typeof obj.scores === 'string' ? JSON.parse(obj.scores) : obj.scores
+      obj.is_nsfw = Number(obj.is_nsfw) === 1
+      return obj
+    }) : []
+
+    res.json({
+      status: true,
+      message: '获取成功',
+      data: {
+        logs,
+        pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      },
+    })
+  } catch (err: any) {
+    console.error('NSFW logs error:', err)
+    res.status(500).json({ status: false, message: '获取 NSFW 日志失败' })
+  }
+})
+
+/**
+ * GET /nsfw-stats - Aggregate NSFW detection statistics (admin only)
+ */
+router.get('/nsfw-stats', authMiddleware, adminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const totalResult = query('SELECT COUNT(*) FROM nsfw_logs')
+    const total = totalResult.length > 0 ? (totalResult[0].values[0][0] as number) : 0
+
+    const byAction = query(
+      `SELECT action, COUNT(*) as cnt FROM nsfw_logs GROUP BY action`
+    )
+    const actionCounts: Record<string, number> = {}
+    if (byAction.length > 0) {
+      for (const row of byAction[0].values) {
+        actionCounts[row[0] as string] = row[1] as number
+      }
+    }
+
+    const nsfwResult = query('SELECT COUNT(*) FROM nsfw_logs WHERE is_nsfw = 1')
+    const nsfwCount = nsfwResult.length > 0 ? (nsfwResult[0].values[0][0] as number) : 0
+
+    // "Today" in the server's local timezone: compare against the local date
+    // boundaries expressed as ISO strings. created_at is stored as ISO (with Z).
+    const now = new Date()
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString()
+    const startOfNextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).toISOString()
+    const todayResult = query(
+      `SELECT COUNT(*) FROM nsfw_logs WHERE created_at >= ? AND created_at < ?`,
+      [startOfDay, startOfNextDay]
+    )
+    const todayCount = todayResult.length > 0 ? (todayResult[0].values[0][0] as number) : 0
+
+    res.json({
+      status: true,
+      message: '获取成功',
+      data: {
+        total,
+        nsfwCount,
+        todayCount,
+        allowed: actionCounts['allow'] || 0,
+        rejected: actionCounts['reject'] || 0,
+        flagged: actionCounts['flag'] || 0,
+        blurred: actionCounts['blur'] || 0,
+        degraded: actionCounts['degrade'] || 0,
+      },
+    })
+  } catch (err: any) {
+    console.error('NSFW stats error:', err)
+    res.status(500).json({ status: false, message: '获取 NSFW 统计失败' })
+  }
+})
+
+/**
+ * GET /nsfw-status - Get NSFW service status (admin only)
+ */
+router.get('/nsfw-status', authMiddleware, adminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { isNsfwReady, getNsfwLoadError } = await import('../services/nsfw.js')
+    res.json({
+      status: true,
+      message: '获取成功',
+      data: {
+        enabled: getCachedSetting('nsfw_enabled') === 'true',
+        ready: isNsfwReady(),
+        error: getNsfwLoadError()?.message || null,
+      },
+    })
+  } catch (err: any) {
+    console.error('NSFW status error:', err)
+    res.status(500).json({ status: false, message: '获取 NSFW 状态失败' })
+  }
+})
+
+/**
+ * POST /nsfw-reload - Manually (re)load the NSFW model (admin only)
+ * Clears any previous error and attempts to load the model. Returns the
+ * resulting status so the frontend can update immediately.
+ */
+router.post('/nsfw-reload', authMiddleware, adminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { loadNsfwModel, resetNsfwState, isNsfwReady, getNsfwLoadError } = await import('../services/nsfw.js')
+    resetNsfwState()
+    try {
+      await loadNsfwModel()
+    } catch {
+      // error captured in loadError; reported below
+    }
+    res.json({
+      status: true,
+      message: isNsfwReady() ? '模型加载成功' : '模型加载失败',
+      data: {
+        enabled: getCachedSetting('nsfw_enabled') === 'true',
+        ready: isNsfwReady(),
+        error: getNsfwLoadError()?.message || null,
+      },
+    })
+  } catch (err: any) {
+    console.error('NSFW reload error:', err)
+    res.status(500).json({ status: false, message: '重新加载 NSFW 模型失败' })
   }
 })
 

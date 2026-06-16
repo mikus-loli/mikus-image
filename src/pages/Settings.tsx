@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Settings as SettingsIcon, Save, RotateCcw, Globe, Upload, Droplets,
   Minimize2, Shield, Image as ImageIcon, Check, AlertCircle,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, ScanSearch,
 } from 'lucide-react';
 import { settingsApi } from '@/lib/api';
 
@@ -24,6 +24,12 @@ interface SettingsData {
   register_enabled: boolean;
   user_isolation: boolean;
   force_2fa: boolean;
+  nsfw_enabled: boolean;
+  nsfw_threshold: number;
+  nsfw_action: 'reject' | 'flag' | 'blur';
+  nsfw_classes: string;
+  nsfw_degrade_mode: 'allow' | 'block';
+  nsfw_blur_radius: number;
 }
 
 const defaultSettings: SettingsData = {
@@ -44,6 +50,12 @@ const defaultSettings: SettingsData = {
   register_enabled: true,
   user_isolation: true,
   force_2fa: false,
+  nsfw_enabled: false,
+  nsfw_threshold: 0.5,
+  nsfw_action: 'reject',
+  nsfw_classes: 'Hentai,Porn,Sexy',
+  nsfw_degrade_mode: 'allow',
+  nsfw_blur_radius: 20,
 };
 
 /** Toggle switch component */
@@ -345,6 +357,74 @@ export default function Settings() {
             label="强制双因素认证"
             description="所有用户必须启用 2FA 才能登录"
           />
+        </SettingSection>
+
+        {/* NSFW Detection */}
+        <SettingSection title="NSFW 内容检测" icon={<ScanSearch size={18} className="text-th-accent" />} defaultOpen={false}>
+          <Toggle
+            checked={settings.nsfw_enabled}
+            onChange={(v) => update('nsfw_enabled', v)}
+            label="启用 NSFW 内容检测"
+            description="上传时使用 NSFWJS 模型自动识别不适宜内容（首次启用会从网络下载模型，约 2-3MB）"
+          />
+          {settings.nsfw_enabled && (
+            <>
+              <Field label={`判定阈值 (${settings.nsfw_threshold.toFixed(2)})`} description="命中类别的概率超过此值即判定为 NSFW，越低越严格">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="0.95"
+                  step="0.05"
+                  value={settings.nsfw_threshold}
+                  onChange={(e) => update('nsfw_threshold', Number(e.target.value))}
+                  className="w-full accent-th-accent"
+                />
+              </Field>
+              <Field label="命中处理策略" description="检测到 NSFW 内容时执行的操作">
+                <select
+                  value={settings.nsfw_action}
+                  onChange={(e) => update('nsfw_action', e.target.value as SettingsData['nsfw_action'])}
+                  className="input-dark"
+                >
+                  <option value="reject">拒绝上传</option>
+                  <option value="flag">标记待审核（正常上传，记录日志）</option>
+                  <option value="blur">模糊处理后上传</option>
+                </select>
+              </Field>
+              {settings.nsfw_action === 'blur' && (
+                <Field label={`模糊半径 (${settings.nsfw_blur_radius}px)`} description="高斯模糊的半径，越大越模糊">
+                  <input
+                    type="range"
+                    min="5"
+                    max="50"
+                    step="1"
+                    value={settings.nsfw_blur_radius}
+                    onChange={(e) => update('nsfw_blur_radius', Number(e.target.value))}
+                    className="w-full accent-th-accent"
+                  />
+                </Field>
+              )}
+              <Field label="判定类别" description="逗号分隔的 NSFWJS 类别名（区分大小写）。可选：Drawing, Hentai, Neutral, Porn, Sexy">
+                <input
+                  type="text"
+                  value={settings.nsfw_classes}
+                  onChange={(e) => update('nsfw_classes', e.target.value)}
+                  className="input-dark"
+                  placeholder="Hentai,Porn,Sexy"
+                />
+              </Field>
+              <Field label="服务降级策略" description="当 NSFWJS 模型不可用（如网络故障）时的处理方式">
+                <select
+                  value={settings.nsfw_degrade_mode}
+                  onChange={(e) => update('nsfw_degrade_mode', e.target.value as SettingsData['nsfw_degrade_mode'])}
+                  className="input-dark"
+                >
+                  <option value="allow">允许上传（跳过检测，记录降级日志）</option>
+                  <option value="block">暂停上传（拒绝所有上传请求）</option>
+                </select>
+              </Field>
+            </>
+          )}
         </SettingSection>
       </div>
 

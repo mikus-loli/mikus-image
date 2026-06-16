@@ -74,6 +74,11 @@ export const imagesApi = {
   batchOperation: (data: { ids: string[]; action: 'delete' | 'move' | 'permission'; album_id?: string; permission?: string }) =>
     api.post('/images/batch', data),
   getQrCode: (id: string) => api.get(`/images/${id}/qrcode`),
+  getNsfwLogs: (params?: { page?: number; limit?: number; action?: string; is_nsfw?: string; search?: string }) =>
+    api.get('/images/nsfw-logs', { params }),
+  getNsfwStatus: () => api.get('/images/nsfw-status'),
+  getNsfwStats: () => api.get('/images/nsfw-stats'),
+  reloadNsfwModel: () => api.post('/images/nsfw-reload'),
 };
 
 // Albums

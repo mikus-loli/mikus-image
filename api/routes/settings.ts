@@ -105,6 +105,15 @@ router.patch('/', authMiddleware, adminMiddleware, async (req: Request, res: Res
     scheduleSave()
     invalidateSettingsCache()
 
+    // When NSFW detection is enabled, proactively preload the model so the
+    // status page shows "ready" and the first upload isn't delayed.
+    if (updates.nsfw_enabled === true || updates.nsfw_enabled === 'true') {
+      import('../services/nsfw.js')
+        .then(({ loadNsfwModel }) => loadNsfwModel())
+        .then(() => console.log('[NSFW] model preloaded after enabling'))
+        .catch((err) => console.error('[NSFW] preload failed:', err?.message || err))
+    }
+
     res.json({ status: true, message: '更新成功' })
   } catch (err: any) {
     console.error('Update settings error:', err)

@@ -16,6 +16,7 @@ import Users from '@/pages/Users';
 import Profile from '@/pages/Profile';
 import Home from '@/pages/Home';
 import Gallery from '@/pages/Gallery';
+import NsfwLogs from '@/pages/NsfwLogs';
 
 // Lazy load Dashboard (heavy: includes recharts)
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
@@ -76,6 +77,14 @@ export default function App() {
             element={
               <ProtectedRoute requireAdmin>
                 <Users />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/nsfw-logs"
+            element={
+              <ProtectedRoute requireAdmin>
+                <NsfwLogs />
               </ProtectedRoute>
             }
           />

@@ -16,6 +16,7 @@ import {
   Moon,
   UserCircle,
   Home,
+  ScanSearch,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { useTheme } from '@/hooks/useTheme';
@@ -26,6 +27,7 @@ const navItems = [
   { to: '/albums', icon: FolderOpen, label: '相册' },
   { to: '/dashboard', icon: LayoutDashboard, label: '仪表盘', admin: true },
   { to: '/users', icon: Users, label: '用户管理', admin: true },
+  { to: '/nsfw-logs', icon: ScanSearch, label: 'NSFW 日志', admin: true },
   { to: '/strategies', icon: Server, label: '存储策略', admin: true },
   { to: '/settings', icon: Settings, label: '系统设置', admin: true },
   { to: '/profile', icon: UserCircle, label: '个人设置' },

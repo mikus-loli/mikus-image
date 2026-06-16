@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS images (
   permission TEXT NOT NULL DEFAULT 'private',
   hash TEXT DEFAULT '',
   links TEXT DEFAULT '{}',
+  nsfw_flagged INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (strategy_id) REFERENCES strategies(id),
@@ -106,6 +107,21 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   target_type TEXT NOT NULL,
   target_id TEXT,
   target_name TEXT,
+  detail TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS nsfw_logs (
+  id TEXT PRIMARY KEY,
+  image_id TEXT,
+  original_name TEXT NOT NULL,
+  user_id TEXT,
+  user_name TEXT,
+  top_class TEXT NOT NULL,
+  max_score REAL NOT NULL DEFAULT 0,
+  scores TEXT NOT NULL DEFAULT '{}',
+  is_nsfw INTEGER NOT NULL DEFAULT 0,
+  action TEXT NOT NULL DEFAULT 'allow',
   detail TEXT DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -155,17 +171,17 @@ function loadDbFromFile(): Uint8Array | null {
 }
 
 function insertDefaultData() {
-  // Check if default strategy already exists
+  // Insert default local storage strategy (only if not exists)
   const existing = db.exec("SELECT id FROM strategies WHERE id = 'default-local'")
-  if (existing.length > 0 && existing[0].values.length > 0) return
+  if (existing.length === 0 || existing[0].values.length === 0) {
+    db.run(
+      `INSERT INTO strategies (id, name, type, config, is_default, status) VALUES (?, ?, ?, ?, ?, ?)`,
+      ['default-local', '本地存储', 'local', '{}', 1, 'active']
+    )
+  }
 
-  // Insert default local storage strategy
-  db.run(
-    `INSERT INTO strategies (id, name, type, config, is_default, status) VALUES (?, ?, ?, ?, ?, ?)`,
-    ['default-local', '本地存储', 'local', '{}', 1, 'active']
-  )
-
-  // Insert default settings
+  // Insert default settings (always run — INSERT OR IGNORE is idempotent,
+  // so new settings added in later versions get inserted into existing DBs)
   const defaultSettings = [
     ['site_name', 'Mikus图床', 'string', '站点名称', 1],
     ['site_description', '一个简洁的图床系统', 'string', '站点描述', 1],
@@ -187,6 +203,12 @@ function insertDefaultData() {
     ['user_isolation', 'true', 'boolean', '用户隔离（普通用户只能看到自己的图片）', 1],
     ['site_created_at', new Date().toISOString(), 'string', '站点创建时间', 0],
     ['force_2fa', 'false', 'boolean', '强制所有用户启用双因素认证', 0],
+    ['nsfw_enabled', 'false', 'boolean', '启用 NSFW 内容检测', 0],
+    ['nsfw_threshold', '0.5', 'number', 'NSFW 判定阈值 (0-1)', 0],
+    ['nsfw_action', 'reject', 'string', 'NSFW 命中处理策略 (reject|flag|blur)', 0],
+    ['nsfw_classes', 'Hentai,Porn,Sexy', 'string', '判定为 NSFW 的类别（逗号分隔）', 0],
+    ['nsfw_degrade_mode', 'allow', 'string', '检测服务不可用时的策略 (allow|block)', 0],
+    ['nsfw_blur_radius', '20', 'number', '模糊处理半径 (px)', 0],
   ]
 
   const stmt = db.prepare(
@@ -234,6 +256,13 @@ export async function initDb(): Promise<Database> {
   if (!hasTotpSecret) {
     db.run("ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT ''")
     db.run("ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0")
+    saveDbToFile()
+  }
+
+  // NSFW migration: add nsfw_flagged column to images
+  const hasNsfwFlagged = imageColumns[0].values.some((row) => row[1] === 'nsfw_flagged')
+  if (!hasNsfwFlagged) {
+    db.run('ALTER TABLE images ADD COLUMN nsfw_flagged INTEGER NOT NULL DEFAULT 0')
     saveDbToFile()
   }
 
