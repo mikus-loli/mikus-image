@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { User, Lock, Loader2, Check } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
+import TwoFactorAuth from '@/components/TwoFactorAuth';
 
 export default function Profile() {
   const { user, updateProfile } = useAuthStore();
@@ -192,6 +193,9 @@ export default function Profile() {
           </button>
         </div>
       </div>
+
+      {/* 2FA Settings */}
+      <TwoFactorAuth />
     </div>
   );
 }

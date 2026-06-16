@@ -5,8 +5,9 @@ import { Router, type Request, type Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { v4 as uuidv4 } from 'uuid'
-import { getDb, query, saveDbToFile } from '../db.js'
+import { getDb, query, saveDbToFile, getCachedSetting } from '../db.js'
 import { authMiddleware, JWT_SECRET } from '../middleware/auth.js'
+import { verifyTotpToken } from '../services/totp.js'
 
 const router = Router()
 
@@ -102,7 +103,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
 
     const db = getDb()
     const result = query(
-      'SELECT id, name, email, password, role, status FROM users WHERE name = ?',
+      'SELECT id, name, email, password, role, status, totp_enabled, totp_secret FROM users WHERE name = ?',
       [name]
     )
 
@@ -119,6 +120,8 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       hashedPassword: String(row[3]),
       role: String(row[4]),
       status: String(row[5]),
+      totpEnabled: row[6] === 1,
+      totpSecret: String(row[7] || ''),
     }
 
     if (user.status !== 'active') {
@@ -129,6 +132,38 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
     const isMatch = await bcrypt.compare(password, user.hashedPassword)
     if (!isMatch) {
       res.status(401).json({ status: false, message: '用户名或密码错误' })
+      return
+    }
+
+    // 2FA check: if user has 2FA enabled, require TOTP code
+    if (user.totpEnabled && user.totpSecret) {
+      // Issue a short-lived temp token for 2FA verification
+      const tempToken = jwt.sign(
+        { id: user.id, name: user.name, email: user.email, role: user.role, twofa_pending: true },
+        JWT_SECRET,
+        { expiresIn: '5m' }
+      )
+      res.json({
+        status: true,
+        message: '请输入双因素认证验证码',
+        data: { requires_2fa: true, temp_token: tempToken },
+      })
+      return
+    }
+
+    // Global force_2fa check: if admin forces 2FA and user hasn't set it up
+    const force2fa = getCachedSetting('force_2fa') === 'true'
+    if (force2fa) {
+      const tempToken = jwt.sign(
+        { id: user.id, name: user.name, email: user.email, role: user.role, twofa_setup_pending: true },
+        JWT_SECRET,
+        { expiresIn: '5m' }
+      )
+      res.json({
+        status: true,
+        message: '管理员要求启用双因素认证，请先完成设置',
+        data: { requires_2fa_setup: true, temp_token: tempToken },
+      })
       return
     }
 
@@ -143,6 +178,74 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
   } catch (err: any) {
     console.error('Login error:', err)
     res.status(500).json({ status: false, message: '登录失败' })
+  }
+})
+
+/**
+ * POST /login/verify-2fa - Verify TOTP code and complete login
+ */
+router.post('/login/verify-2fa', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { temp_token, code } = req.body
+    if (!temp_token || !code) {
+      res.status(400).json({ status: false, message: '请提供临时令牌和验证码' })
+      return
+    }
+
+    // Verify temp token
+    let decoded: any
+    try {
+      decoded = jwt.verify(temp_token, JWT_SECRET)
+    } catch {
+      res.status(401).json({ status: false, message: '临时令牌已过期，请重新登录' })
+      return
+    }
+
+    if (!decoded.twofa_pending) {
+      res.status(400).json({ status: false, message: '无效的临时令牌' })
+      return
+    }
+
+    // Get user's TOTP secret
+    const result = query('SELECT totp_secret, totp_enabled, status FROM users WHERE id = ?', [decoded.id])
+    if (result.length === 0 || result[0].values.length === 0) {
+      res.status(404).json({ status: false, message: '用户不存在' })
+      return
+    }
+
+    const row = result[0].values[0]
+    const secret = String(row[0] || '')
+    const totpEnabled = row[1] === 1
+    const userStatus = String(row[2])
+
+    if (userStatus !== 'active') {
+      res.status(403).json({ status: false, message: '账号已被禁用' })
+      return
+    }
+
+    if (!totpEnabled || !secret) {
+      res.status(400).json({ status: false, message: '该用户未启用2FA' })
+      return
+    }
+
+    // Verify TOTP code
+    if (!await verifyTotpToken(code, secret)) {
+      res.status(401).json({ status: false, message: '验证码错误' })
+      return
+    }
+
+    // Issue real JWT
+    const tokenUser = { id: decoded.id, name: decoded.name, email: decoded.email, role: decoded.role }
+    const token = generateToken(tokenUser)
+
+    res.json({
+      status: true,
+      message: '登录成功',
+      data: { token, user: tokenUser },
+    })
+  } catch (err: any) {
+    console.error('2FA login verify error:', err)
+    res.status(500).json({ status: false, message: '2FA验证失败' })
   }
 })
 

@@ -44,7 +44,7 @@ router.get('/', authMiddleware, adminMiddleware, async (req: Request, res: Respo
     const total = countResult.length > 0 ? (countResult[0].values[0][0] as number) : 0
 
     // Get users (exclude password)
-    const sqlQuery = `SELECT id, name, email, role, capacity, used_capacity, status, created_at FROM users ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    const sqlQuery = `SELECT id, name, email, role, capacity, used_capacity, status, totp_enabled, created_at FROM users ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`
     const queryParams = [...params, limit, offset]
     const result = query(sqlQuery, queryParams)
 
@@ -56,7 +56,8 @@ router.get('/', authMiddleware, adminMiddleware, async (req: Request, res: Respo
       capacity: row[4],
       used_capacity: row[5],
       status: row[6],
-      created_at: row[7],
+      totp_enabled: row[7] === 1,
+      created_at: row[8],
     })) : []
 
     res.json({
@@ -244,6 +245,34 @@ router.post('/:id/reset-password', authMiddleware, adminMiddleware, async (req: 
   } catch (err: any) {
     console.error('Reset password error:', err)
     res.status(500).json({ status: false, message: '重置密码失败' })
+  }
+})
+
+/**
+ * POST /:id/reset-2fa - Admin reset user's 2FA (disable it)
+ */
+router.post('/:id/reset-2fa', authMiddleware, adminMiddleware, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const db = getDb()
+    const { id } = req.params
+    const operator = req.user!
+
+    const result = query('SELECT id, name FROM users WHERE id = ?', [id])
+    if (result.length === 0 || result[0].values.length === 0) {
+      res.status(404).json({ status: false, message: '用户不存在' })
+      return
+    }
+
+    const targetName = result[0].values[0][1] as string
+    db.run("UPDATE users SET totp_secret = '', totp_enabled = 0, updated_at = datetime('now') WHERE id = ?", [id])
+    scheduleSave()
+
+    auditLog(operator.id, operator.name, 'reset_2fa', 'user', id, targetName)
+
+    res.json({ status: true, message: '2FA已重置' })
+  } catch (err: any) {
+    console.error('Reset 2FA error:', err)
+    res.status(500).json({ status: false, message: '重置2FA失败' })
   }
 })
 

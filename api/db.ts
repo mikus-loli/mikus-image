@@ -176,7 +176,7 @@ function insertDefaultData() {
     ['enable_watermark', 'false', 'boolean', '启用水印', 0],
     ['watermark_text', 'Mikus图床', 'string', '水印文字', 0],
     ['watermark_position', 'bottom-right', 'string', '水印位置', 0],
-    ['watermark_opacity', '0.3', 'number', '水印透明度(0-1)', 0],
+    ['watermark_opacity', '30', 'number', '水印透明度(0-100)', 0],
     ['enable_thumbnail', 'true', 'boolean', '启用缩略图', 0],
     ['thumbnail_max_width', '300', 'number', '缩略图最大宽度', 0],
     ['default_strategy', 'default-local', 'string', '默认存储策略', 0],
@@ -186,6 +186,7 @@ function insertDefaultData() {
     ['default_capacity', '104857600', 'number', '默认用户容量(字节)', 0],
     ['user_isolation', 'true', 'boolean', '用户隔离（普通用户只能看到自己的图片）', 1],
     ['site_created_at', new Date().toISOString(), 'string', '站点创建时间', 0],
+    ['force_2fa', 'false', 'boolean', '强制所有用户启用双因素认证', 0],
   ]
 
   const stmt = db.prepare(
@@ -224,6 +225,15 @@ export async function initDb(): Promise<Database> {
   const hasThumbnailUrl = imageColumns.length > 0 && imageColumns[0].values.some((row) => row[1] === 'thumbnail_url')
   if (!hasThumbnailUrl) {
     db.run("ALTER TABLE images ADD COLUMN thumbnail_url TEXT DEFAULT ''")
+    saveDbToFile()
+  }
+
+  // 2FA migration: add totp_secret and totp_enabled columns to users
+  const userColumns = db.exec('PRAGMA table_info(users)')
+  const hasTotpSecret = userColumns.length > 0 && userColumns[0].values.some((row) => row[1] === 'totp_secret')
+  if (!hasTotpSecret) {
+    db.run("ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT ''")
+    db.run("ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0")
     saveDbToFile()
   }
 

@@ -16,7 +16,8 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (name: string, password: string) => Promise<void>;
+  login: (name: string, password: string) => Promise<{ requires_2fa?: boolean; requires_2fa_setup?: boolean; temp_token?: string }>;
+  loginVerify2fa: (tempToken: string, code: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<void>;
@@ -33,6 +34,27 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
     try {
       const res = await authApi.login({ name, password });
+      const data = res.data.data;
+      // 2FA required - return info without setting authenticated
+      if (data.requires_2fa || data.requires_2fa_setup) {
+        set({ isLoading: false });
+        return { requires_2fa: data.requires_2fa, requires_2fa_setup: data.requires_2fa_setup, temp_token: data.temp_token };
+      }
+      const { token, user } = data;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      set({ user, token, isAuthenticated: true, isLoading: false });
+      return {};
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  loginVerify2fa: async (tempToken, code) => {
+    set({ isLoading: true });
+    try {
+      const res = await authApi.loginVerify2fa({ temp_token: tempToken, code });
       const { token, user } = res.data.data;
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(user));

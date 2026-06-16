@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Users as UsersIcon, Edit3, Trash2, X, Save, Shield, User,
+  Users as UsersIcon, Edit3, Trash2, X, Save, Shield, ShieldOff, User,
   KeyRound, UserPlus, Eye, EyeOff, CheckCircle, AlertCircle,
   ScrollText, ChevronLeft, ChevronRight,
 } from 'lucide-react';
@@ -14,6 +14,7 @@ interface UserData {
   capacity: number;
   used_capacity: number;
   status: string;
+  totp_enabled?: boolean;
   created_at: string;
 }
 
@@ -209,6 +210,17 @@ export default function Users() {
     }
   };
 
+  const handleReset2fa = async (id: string) => {
+    if (!confirm('确定要重置该用户的双因素认证吗？')) return;
+    try {
+      await usersApi.reset2fa(id);
+      setToast({ message: '2FA已重置', type: 'success' });
+      fetchUsers();
+    } catch {
+      setToast({ message: '重置2FA失败', type: 'error' });
+    }
+  };
+
   const openLogs = () => {
     setShowLogs(true);
     fetchLogs(1);
@@ -217,6 +229,7 @@ export default function Users() {
   const actionLabel: Record<string, string> = {
     create_user: '创建用户',
     reset_password: '重置密码',
+    reset_2fa: '重置2FA',
     update_user: '更新用户',
     delete_user: '删除用户',
   };
@@ -261,6 +274,7 @@ export default function Users() {
                 <th className="px-4 py-3">存储用量</th>
                 <th className="px-4 py-3">注册时间</th>
                 <th className="px-4 py-3">状态</th>
+                <th className="px-4 py-3">2FA</th>
                 <th className="px-4 py-3">操作</th>
               </tr>
             </thead>
@@ -310,6 +324,13 @@ export default function Users() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${
+                        u.totp_enabled ? 'bg-green-500/10 text-green-400' : 'bg-th-badge-bg text-th-text-ter'
+                      }`}>
+                        {u.totp_enabled ? '已启用' : '未启用'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button onClick={() => openEdit(u)} className="text-th-text-ter hover:text-th-accent" title="编辑">
                           <Edit3 size={16} />
@@ -317,6 +338,11 @@ export default function Users() {
                         <button onClick={() => { setResetUser(u); setShowResetPw(true); }} className="text-th-text-ter hover:text-amber-400" title="重置密码">
                           <KeyRound size={16} />
                         </button>
+                        {u.totp_enabled && (
+                          <button onClick={() => handleReset2fa(u.id)} className="text-th-text-ter hover:text-orange-400" title="重置2FA">
+                            <ShieldOff size={16} />
+                          </button>
+                        )}
                         <button onClick={() => setConfirmDelete(u.id)} className="text-th-text-ter hover:text-red-400" title="删除">
                           <Trash2 size={16} />
                         </button>

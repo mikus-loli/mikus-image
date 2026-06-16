@@ -35,11 +35,21 @@ api.interceptors.response.use(
 export const authApi = {
   login: (data: { name: string; password: string }) =>
     api.post('/auth/login', data),
+  loginVerify2fa: (data: { temp_token: string; code: string }) =>
+    api.post('/auth/login/verify-2fa', data),
   register: (data: { name: string; email: string; password: string }) =>
     api.post('/auth/register', data),
   getMe: () => api.get('/auth/me'),
   updateProfile: (data: { name?: string; oldPassword?: string; newPassword?: string }) =>
     api.patch('/auth/profile', data),
+};
+
+// 2FA
+export const twofaApi = {
+  getStatus: () => api.get('/2fa/status'),
+  setup: (password: string) => api.post('/2fa/setup', { password }),
+  verify: (code: string, setupToken: string) => api.post('/2fa/verify', { code, setup_token: setupToken }),
+  disable: (password: string) => api.post('/2fa/disable', { password }),
 };
 
 // Images
@@ -95,6 +105,8 @@ export const usersApi = {
     api.post('/users', data),
   resetPassword: (id: string, password: string) =>
     api.post(`/users/${id}/reset-password`, { password }),
+  reset2fa: (id: string) =>
+    api.post(`/users/${id}/reset-2fa`),
   getAuditLogs: (params?: { page?: number; limit?: number }) =>
     api.get('/users/audit-logs', { params }),
 };

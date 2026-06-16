@@ -5,7 +5,6 @@ import {
   Copy,
   Sparkles,
   Upload,
-  Camera,
   Zap,
   Shield,
   Layers,
@@ -16,18 +15,19 @@ import {
   FolderOpen,
   Globe,
   ChevronRight,
-  Users,
-  ImageIcon,
   Clock,
   Loader2,
   Check,
   X,
+  MousePointerClick,
+  Clipboard,
+  Github,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth';
 import { settingsApi, imagesApi } from '@/lib/api';
 
 const highlights = [
-  { icon: Zap, label: '极速上传', desc: '拖拽 / 粘贴 / URL' },
+  { icon: Zap, label: '极速上传', desc: '拖拽 · 粘贴 · URL' },
   { icon: Shield, label: '权限控制', desc: '公开 / 私密' },
   { icon: Layers, label: '相册管理', desc: '分类整理' },
   { icon: CloudUpload, label: '多存储策略', desc: '本地 / 云端' },
@@ -38,6 +38,13 @@ const linkFormats = [
   { icon: Image, label: 'Markdown' },
   { icon: Globe, label: 'HTML' },
   { icon: QrCode, label: '二维码' },
+];
+
+const uploadMethods = [
+  { icon: MousePointerClick, label: '点击选择' },
+  { icon: Upload, label: '拖拽上传' },
+  { icon: Clipboard, label: '剪贴板粘贴' },
+  { icon: Link2, label: 'URL 导入' },
 ];
 
 interface SiteStats {
@@ -192,22 +199,19 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(0,229,195,0.12),transparent),radial-gradient(ellipse_60%_40%_at_80%_100%,rgba(45,27,105,0.08),transparent),var(--color-bg-primary)] text-th-text">
+    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(0,229,195,0.10),transparent),radial-gradient(ellipse_60%_40%_at_80%_100%,rgba(45,27,105,0.06),transparent),var(--color-bg-primary)] text-th-text">
       {/* Ambient light effects */}
-      <div className="pointer-events-none absolute left-1/2 top-0 h-[600px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(0,229,195,0.06)_0%,transparent_70%)]" />
-      <div className="pointer-events-none absolute bottom-0 right-0 h-[400px] w-[600px] rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.05)_0%,transparent_70%)]" />
+      <div className="pointer-events-none absolute left-1/2 top-0 h-[600px] w-[900px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(0,229,195,0.05)_0%,transparent_70%)]" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-[400px] w-[600px] rounded-full bg-[radial-gradient(circle,rgba(99,102,241,0.04)_0%,transparent_70%)]" />
 
       {/* Header */}
-      <header className="relative z-10">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+      <header className="sticky top-0 z-50 border-b border-th-border/30 bg-th-bg-primary/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link to="/" className="group flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--color-accent),#00b89c)] shadow-lg shadow-th-accent-shadow/40 transition-transform duration-300 group-hover:scale-105">
               <span className="font-outfit text-lg font-bold text-white">M</span>
             </div>
-            <div className="flex flex-col">
-              <span className="font-outfit text-lg font-bold leading-tight">Mikus</span>
-              
-            </div>
+            <span className="font-outfit text-lg font-bold leading-tight">Mikus</span>
           </Link>
 
           <div className="flex items-center gap-3">
@@ -227,16 +231,9 @@ export default function Home() {
               </div>
             ) : (
               <>
-                {registerEnabled === false ? (
-                  <Link to="/login" className="btn-primary inline-flex items-center gap-2 text-sm">
-                    登录
-                    <ArrowRight size={15} />
-                  </Link>
-                ) : (
-                  <Link to="/login" className="rounded-full px-5 py-2 text-sm font-medium text-th-text-sec transition-colors hover:text-th-text">
-                    登录
-                  </Link>
-                )}
+                <Link to="/login" className="rounded-full px-5 py-2 text-sm font-medium text-th-text-sec transition-colors hover:text-th-text">
+                  登录
+                </Link>
                 {registerEnabled === true && (
                   <Link to="/register" className="btn-primary inline-flex items-center gap-2 text-sm">
                     免费注册
@@ -250,7 +247,7 @@ export default function Home() {
       </header>
 
       {/* Hero */}
-      <section className="relative z-10 mx-auto max-w-6xl px-6 pt-16 pb-20 sm:pt-24 sm:pb-28">
+      <section className="relative z-10 mx-auto max-w-6xl px-6 pt-16 pb-16 sm:pt-24 sm:pb-20">
         <div className="flex flex-col items-center text-center">
           {/* Badge */}
           <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-th-border/80 bg-th-bg-glass-card/80 px-5 py-2 text-sm text-th-text-sec shadow-sm backdrop-blur-xl">
@@ -264,8 +261,6 @@ export default function Home() {
             <br />
             <span className="mt-5 inline-block bg-[linear-gradient(135deg,var(--color-accent),#7cf7e3,#00b89c)] bg-clip-text text-transparent">图片托管与管理</span>
           </h1>
-
-
 
           {/* Subtitle */}
           <p className="mt-6 max-w-xl text-base leading-8 text-th-text-sec sm:text-lg sm:leading-9">
@@ -290,11 +285,23 @@ export default function Home() {
             </Link>
           </div>
 
-
+          {/* Stats */}
+          <div className="mt-14 flex flex-wrap items-center justify-center gap-x-12 gap-y-4">
+            {[
+              { label: '注册用户', value: stats.users },
+              { label: '托管图片', value: stats.images },
+              { label: '运行天数', value: stats.days },
+            ].map((item) => (
+              <div key={item.label} className="flex flex-col items-center">
+                <span className="font-outfit text-2xl font-bold text-th-text">{formatNumber(item.value)}</span>
+                <span className="mt-1 text-xs text-th-text-ter">{item.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* Preview card */}
+      {/* Upload demo card */}
       <section className="relative z-10 mx-auto max-w-5xl px-6 pb-20">
         <div className="overflow-hidden rounded-2xl border border-th-border/60 bg-th-bg-glass-card/60 shadow-2xl shadow-black/5 backdrop-blur-2xl">
           {/* Toolbar */}
@@ -372,7 +379,7 @@ export default function Home() {
                   <Upload size={24} className="text-th-accent" />
                 </div>
                 <div className="text-sm font-medium text-th-text">拖拽图片到此处上传</div>
-                <div className="mt-1 text-xs text-th-text-ter">或点击选择 · Ctrl+V 粘贴 · URL 导入</div>
+                <div className="mt-1 text-xs text-th-text-ter">登录后即可使用全部上传功能</div>
               </div>
             )}
             {/* Link formats */}
@@ -390,7 +397,7 @@ export default function Home() {
                     }`}
                     onClick={() => uploadedImage && isAuthenticated && copyToClipboard(fmt.label)}
                   >
-                    <Icon size={16} className={uploadedImage ? 'text-th-accent' : 'text-th-accent'} />
+                    <Icon size={16} className="text-th-accent" />
                     <span className="text-sm text-th-text-sec">{fmt.label}</span>
                     {isCopied ? (
                       <Check size={12} className="ml-auto text-th-accent" />
@@ -408,13 +415,12 @@ export default function Home() {
       {/* Feature highlights */}
       <section className="relative z-10 mx-auto max-w-6xl px-6 pb-20">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {highlights.map((item, index) => {
+          {highlights.map((item) => {
             const Icon = item.icon;
             return (
               <div
                 key={item.label}
                 className="group rounded-2xl border border-th-border/50 bg-th-bg-glass-card/50 p-6 backdrop-blur-xl transition-all duration-300 hover:border-th-accent/40 hover:shadow-lg hover:shadow-th-accent-shadow/10"
-                style={{ animationDelay: `${index * 100}ms` }}
               >
                 <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-th-accent-bg text-th-accent transition-colors duration-300 group-hover:bg-th-accent group-hover:text-white">
                   <Icon size={22} />
@@ -440,12 +446,16 @@ export default function Home() {
             <p className="mt-3 text-sm leading-7 text-th-text-sec">
               支持拖拽、点击、剪贴板粘贴和 URL 导入四种上传方式。上传完成后自动生成直链、Markdown、HTML 和二维码，一键复制即可分享。
             </p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {['拖拽上传', '批量上传', 'URL 导入', '剪贴板粘贴', '自动缩略图'].map((tag) => (
-                <span key={tag} className="rounded-full border border-th-border/50 bg-th-bg-tertiary/40 px-3 py-1 text-xs text-th-text-ter">
-                  {tag}
-                </span>
-              ))}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {uploadMethods.map((m) => {
+                const Icon = m.icon;
+                return (
+                  <div key={m.label} className="flex items-center gap-2 rounded-lg border border-th-border/40 bg-th-bg-tertiary/40 px-3 py-2">
+                    <Icon size={14} className="text-th-accent" />
+                    <span className="text-xs text-th-text-sec">{m.label}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -459,11 +469,12 @@ export default function Home() {
             <p className="mt-3 text-sm leading-7 text-th-text-sec">
               通过相册和标签对图片进行分类整理，支持公开与私密权限控制。用户数据隔离，管理员可统一管理存储策略与系统配置。
             </p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {['相册管理', '标签分类', '权限控制', '用户隔离', '批量操作'].map((tag) => (
-                <span key={tag} className="rounded-full border border-th-border/50 bg-th-bg-tertiary/40 px-3 py-1 text-xs text-th-text-ter">
-                  {tag}
-                </span>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {['相册管理', '标签分类', '权限控制', '用户隔离', '批量操作', '存储策略'].map((tag) => (
+                <div key={tag} className="flex items-center gap-2 rounded-lg border border-th-border/40 bg-th-bg-tertiary/40 px-3 py-2">
+                  <Check size={14} className="text-th-accent" />
+                  <span className="text-xs text-th-text-sec">{tag}</span>
+                </div>
               ))}
             </div>
           </div>
@@ -498,7 +509,9 @@ export default function Home() {
       <footer className="relative z-10 border-t border-th-border/40 py-8">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 sm:flex-row">
           <div className="flex items-center gap-2 text-sm text-th-text-ter">
-            <Camera size={14} className="text-th-accent" />
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[linear-gradient(135deg,var(--color-accent),#00b89c)]">
+              <span className="font-outfit text-xs font-bold text-white">M</span>
+            </div>
             <span>Mikus Image</span>
           </div>
           <div className="flex items-center gap-6 text-xs text-th-text-ter">

@@ -22,6 +22,7 @@ import strategyRoutes from './routes/strategies.js'
 import userRoutes from './routes/users.js'
 import settingsRoutes from './routes/settings.js'
 import dashboardRoutes from './routes/dashboard.js'
+import twofaRoutes from './routes/twofa.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -69,6 +70,7 @@ app.use('/api/strategies', strategyRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/2fa', twofaRoutes)
 
 /**
  * health check

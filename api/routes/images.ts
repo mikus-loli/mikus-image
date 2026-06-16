@@ -55,7 +55,9 @@ async function processAndSaveImage(
   const enableWatermark = getCachedSetting('enable_watermark') === 'true'
   const watermarkText = getCachedSetting('watermark_text') || 'Mikus图床'
   const watermarkPosition = getCachedSetting('watermark_position') || 'bottom-right'
-  const watermarkOpacity = parseFloat(getCachedSetting('watermark_opacity') || '0.3')
+  // Parse opacity: accept both 0-1 (decimal) and 0-100 (percentage) formats
+  const rawOpacity = parseFloat(getCachedSetting('watermark_opacity') || '30')
+  const watermarkOpacity = rawOpacity > 1 ? rawOpacity / 100 : rawOpacity
   const enableThumbnail = getCachedSetting('enable_thumbnail') === 'true'
   const thumbnailMaxWidth = Math.max(1, parseInt(getCachedSetting('thumbnail_max_width') || '300'))
 
@@ -110,6 +112,10 @@ async function processAndSaveImage(
       const result = await processWithSharp(buffer, {
         thumbnail: enableThumbnail,
         thumbnailMaxWidth,
+        watermark: enableWatermark,
+        watermarkText,
+        watermarkPosition,
+        watermarkOpacity,
       })
       processedBuffer = result.processedBuffer
       thumbnailBuffer = result.thumbnailBuffer

@@ -38,24 +38,29 @@ function createWatermarkSvg(
   position: string = 'bottom-right',
   opacity: number = 0.3
 ): Buffer {
-  const fontSize = Math.max(16, Math.min(32, Math.floor(width / 20)))
+  const fontSize = Math.max(16, Math.min(48, Math.floor(width / 20)))
   const padding = 10
   let x: number, y: number
-  let baseline: 'text-before-edge' | 'middle' | 'text-after-edge'
+  let anchor: 'start' | 'middle' | 'end'
 
   switch (position) {
-    case 'top-left': x = padding; y = padding; baseline = 'text-before-edge'; break
-    case 'top-right': x = width - padding; y = padding; baseline = 'text-before-edge'; break
-    case 'bottom-left': x = padding; y = height - padding; baseline = 'text-after-edge'; break
-    case 'center': x = width / 2; y = height / 2; baseline = 'middle'; break
+    case 'top-left':
+      x = padding; y = padding + fontSize; anchor = 'start'; break
+    case 'top-right':
+      x = width - padding; y = padding + fontSize; anchor = 'end'; break
+    case 'bottom-left':
+      x = padding; y = height - padding; anchor = 'start'; break
+    case 'center':
+      x = width / 2; y = height / 2 + fontSize / 3; anchor = 'middle'; break
     case 'bottom-right':
-    default: x = width - padding; y = height - padding; baseline = 'text-after-edge'; break
+    default:
+      x = width - padding; y = height - padding; anchor = 'end'; break
   }
 
-  const anchor = position.includes('right') ? 'end' : position === 'center' ? 'middle' : 'start'
-
-  const svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <text x="${x}" y="${y}" font-family="sans-serif" font-size="${fontSize}" fill="white" opacity="${opacity}" text-anchor="${anchor}" dominant-baseline="${baseline}">${escapeXml(text)}</text>
+  // Use rgba fill (more reliable than fill-opacity in librsvg) + dark shadow for contrast
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+    <text x="${x}" y="${y}" font-family="sans-serif" font-size="${fontSize}" font-weight="bold" fill="rgba(0,0,0,${opacity})" text-anchor="${anchor}" dx="1" dy="1">${escapeXml(text)}</text>
+    <text x="${x}" y="${y}" font-family="sans-serif" font-size="${fontSize}" font-weight="bold" fill="rgba(255,255,255,${opacity})" text-anchor="${anchor}">${escapeXml(text)}</text>
   </svg>`
   return Buffer.from(svg)
 }
@@ -110,7 +115,9 @@ export async function processImage(buffer: Buffer, options: {
     pipeline = pipeline.composite([{
       input: watermarkSvg,
       blend: 'over',
+      tile: false,
     }])
+    console.log('[Watermark] Applied:', { width, height, position: watermarkPosition, opacity: watermarkOpacity, text: watermarkText })
   }
 
   const quality = compress ? compressQuality : 80
@@ -134,29 +141,54 @@ export async function processImage(buffer: Buffer, options: {
 }
 
 /**
- * Process WebP/ICO/SVG using sharp - convert to WebP + thumbnail
+ * Process WebP/ICO/SVG using sharp - convert to WebP + thumbnail + watermark
  */
 export async function processWithSharp(
   buffer: Buffer,
   options: {
     thumbnail?: boolean
     thumbnailMaxWidth?: number
+    watermark?: boolean
+    watermarkText?: string
+    watermarkPosition?: string
+    watermarkOpacity?: number
   } = {}
 ): Promise<{ processedBuffer: Buffer; width: number; height: number; thumbnailBuffer?: Buffer }> {
+  const {
+    thumbnail: enableThumbnail = false,
+    thumbnailMaxWidth = 300,
+    watermark: enableWatermark = false,
+    watermarkText = 'Mikus图床',
+    watermarkPosition = 'bottom-right',
+    watermarkOpacity = 0.3,
+  } = options
+
   const metadata = await sharp(buffer).metadata()
   const width = metadata.width || 0
   const height = metadata.height || 0
 
-  const processedBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer()
+  let pipeline = sharp(buffer)
+
+  if (enableWatermark && width > 0 && height > 0) {
+    const watermarkSvg = createWatermarkSvg(watermarkText, width, height, watermarkPosition, watermarkOpacity)
+    pipeline = pipeline.composite([{
+      input: watermarkSvg,
+      blend: 'over',
+      tile: false,
+    }])
+    console.log('[Watermark] Applied (sharp):', { width, height, position: watermarkPosition, opacity: watermarkOpacity, text: watermarkText })
+  }
+
+  const processedBuffer = await pipeline.webp({ quality: 80 }).toBuffer()
 
   let thumbnailBuffer: Buffer | undefined
-  if (options.thumbnail) {
+  if (enableThumbnail) {
     const maxWidth = options.thumbnailMaxWidth || 300
-    let pipeline = sharp(buffer)
+    let thumbPipeline = sharp(buffer)
     if (width > maxWidth) {
-      pipeline = pipeline.resize(maxWidth, null, { withoutEnlargement: true })
+      thumbPipeline = thumbPipeline.resize(maxWidth, null, { withoutEnlargement: true })
     }
-    thumbnailBuffer = await pipeline.webp({ quality: 70 }).toBuffer()
+    thumbnailBuffer = await thumbPipeline.webp({ quality: 70 }).toBuffer()
   }
 
   return { processedBuffer, width, height, thumbnailBuffer }

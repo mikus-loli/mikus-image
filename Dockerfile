@@ -14,8 +14,8 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-# Install sharp native dependencies
-RUN apk add --no-cache vips vips-dev
+# Install sharp native dependencies + fonts (required for SVG text/watermark rendering)
+RUN apk add --no-cache vips vips-dev fontconfig ttf-dejavu
 
 # Install production dependencies + tsx for runtime TS support
 COPY package.json package-lock.json* ./
