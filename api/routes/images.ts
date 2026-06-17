@@ -103,6 +103,23 @@ function logNsfwDetection(params: {
   scheduleSave()
 }
 
+function logUploadFailure(params: {
+  originalName: string
+  userId: string
+  userName: string
+  detail: string
+}): void {
+  logNsfwDetection({
+    imageId: null,
+    originalName: params.originalName,
+    userId: params.userId,
+    userName: params.userName,
+    result: null,
+    action: 'upload_failed',
+    detail: params.detail,
+  })
+}
+
 function generateImageKey(extension: string, username?: string): string {
   const now = new Date()
   const Y = now.getFullYear()
@@ -385,6 +402,12 @@ router.post('/', authMiddleware, upload.single('image'), async (req: Request, re
       if (usedCapacity + req.file.size > capacity) {
         // Clean up temp file
         fs.unlinkSync(req.file.path)
+        logUploadFailure({
+          originalName: Buffer.from(req.file.originalname, 'latin1').toString('utf-8'),
+          userId: user.id,
+          userName: user.name,
+          detail: `存储空间不足：已用 ${usedCapacity}，容量 ${capacity}，本次上传 ${req.file.size}`,
+        })
         res.status(413).json({ status: false, message: '存储空间不足' })
         return
       }
@@ -414,6 +437,12 @@ router.post('/', authMiddleware, upload.single('image'), async (req: Request, re
       return
     }
     console.error('Upload error:', err)
+    logUploadFailure({
+      originalName: req.file?.originalname ? Buffer.from(req.file.originalname, 'latin1').toString('utf-8') : 'unknown',
+      userId: req.user?.id || 'unknown',
+      userName: req.user?.name || 'unknown',
+      detail: err instanceof Error ? err.message : '未知上传错误',
+    })
     res.status(500).json({ status: false, message: '上传失败' })
   }
 })
@@ -448,6 +477,12 @@ router.post('/url', authMiddleware, async (req: Request, res: Response): Promise
       const capacity = userResult[0].values[0][0] as number
       const usedCapacity = userResult[0].values[0][1] as number
       if (usedCapacity + buffer.length > capacity) {
+        logUploadFailure({
+          originalName,
+          userId: user.id,
+          userName: user.name,
+          detail: `URL 上传存储空间不足：已用 ${usedCapacity}，容量 ${capacity}，本次上传 ${buffer.length}`,
+        })
         res.status(413).json({ status: false, message: '存储空间不足' })
         return
       }
@@ -468,6 +503,12 @@ router.post('/url', authMiddleware, async (req: Request, res: Response): Promise
       return
     }
     console.error('URL upload error:', err)
+    logUploadFailure({
+      originalName: req.body?.url || 'unknown-url',
+      userId: req.user?.id || 'unknown',
+      userName: req.user?.name || 'unknown',
+      detail: err instanceof Error ? err.message : '未知 URL 上传错误',
+    })
     res.status(500).json({ status: false, message: '从URL上传失败' })
   }
 })
@@ -641,8 +682,8 @@ router.get('/nsfw-logs', authMiddleware, adminMiddleware, async (req: Request, r
       params.push(parseInt(isNsfw))
     }
     if (search) {
-      whereClause += ' AND (original_name LIKE ? OR user_name LIKE ? OR top_class LIKE ?)'
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`)
+      whereClause += ' AND (original_name LIKE ? OR user_name LIKE ? OR top_class LIKE ? OR detail LIKE ?)'
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`)
     }
 
     const countResult = query(`SELECT COUNT(*) FROM nsfw_logs ${whereClause}`, params)
@@ -720,6 +761,7 @@ router.get('/nsfw-stats', authMiddleware, adminMiddleware, async (req: Request, 
         flagged: actionCounts['flag'] || 0,
         blurred: actionCounts['blur'] || 0,
         degraded: actionCounts['degrade'] || 0,
+        uploadFailed: actionCounts['upload_failed'] || 0,
       },
     })
   } catch (err: any) {

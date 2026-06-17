@@ -3,6 +3,7 @@ import {
   ScanSearch, ChevronLeft, ChevronRight, Search, ShieldAlert,
   CheckCircle, AlertTriangle, RefreshCw, Download, Loader2,
   ShieldX, Eye, ImageOff, ZapOff, FileSearch, ChevronDown, X,
+  UploadCloud,
 } from 'lucide-react';
 import { imagesApi } from '@/lib/api';
 
@@ -36,6 +37,7 @@ interface NsfwStats {
   flagged: number;
   blurred: number;
   degraded: number;
+  uploadFailed: number;
 }
 
 interface ActionConfig {
@@ -51,6 +53,7 @@ const ACTION_CONFIG: Record<string, ActionConfig> = {
   flag:    { label: '标记', icon: Eye,         badgeClass: 'bg-amber-500/10 text-amber-400 border-amber-500/20',     dotClass: 'bg-amber-400' },
   blur:    { label: '模糊', icon: ImageOff,    badgeClass: 'bg-blue-500/10 text-blue-400 border-blue-500/20',       dotClass: 'bg-blue-400' },
   degrade: { label: '降级', icon: ZapOff,      badgeClass: 'bg-orange-500/10 text-orange-400 border-orange-500/20', dotClass: 'bg-orange-400' },
+  upload_failed: { label: '上传失败', icon: UploadCloud, badgeClass: 'bg-rose-500/10 text-rose-400 border-rose-500/20', dotClass: 'bg-rose-400' },
 };
 
 const CLASS_COLORS: Record<string, string> = {
@@ -182,6 +185,7 @@ export default function NsfwLogs() {
   const quickFilters = useMemo(() => [
     { key: 'nsfw', label: '仅 NSFW', active: nsfwFilter === '1', onClick: () => { setNsfwFilter(nsfwFilter === '1' ? '' : '1'); setPage(1); } },
     { key: 'reject', label: '已拒绝', active: actionFilter === 'reject', onClick: () => { setActionFilter(actionFilter === 'reject' ? '' : 'reject'); setPage(1); } },
+    { key: 'failed', label: '上传失败', active: actionFilter === 'upload_failed', onClick: () => { setActionFilter(actionFilter === 'upload_failed' ? '' : 'upload_failed'); setPage(1); } },
     { key: 'flag', label: '已标记', active: actionFilter === 'flag', onClick: () => { setActionFilter(actionFilter === 'flag' ? '' : 'flag'); setPage(1); } },
     { key: 'degrade', label: '降级', active: actionFilter === 'degrade', onClick: () => { setActionFilter(actionFilter === 'degrade' ? '' : 'degrade'); setPage(1); } },
   ], [nsfwFilter, actionFilter]);
@@ -193,6 +197,7 @@ export default function NsfwLogs() {
       { icon: FileSearch, label: '总检测数', value: stats.total, sub: `今日 ${stats.todayCount}`, color: 'from-[#00b89c] to-[#00e5c3]', bg: 'bg-[rgba(0,184,156,0.08)]' },
       { icon: ShieldAlert, label: 'NSFW 命中', value: stats.nsfwCount, sub: stats.total ? `${((stats.nsfwCount / stats.total) * 100).toFixed(1)}%` : '0%', color: 'from-[#ef4444] to-[#f87171]', bg: 'bg-[rgba(239,68,68,0.08)]' },
       { icon: ShieldX, label: '已拦截/模糊', value: blockedCount, sub: `拒绝 ${stats.rejected} · 模糊 ${stats.blurred}`, color: 'from-[#f59e0b] to-[#fbbf24]', bg: 'bg-[rgba(245,158,11,0.08)]' },
+      { icon: UploadCloud, label: '上传失败', value: stats.uploadFailed, sub: stats.uploadFailed > 0 ? '查看失败原因' : '无失败记录', color: 'from-[#e11d48] to-[#fb7185]', bg: 'bg-[rgba(225,29,72,0.08)]' },
       { icon: ZapOff, label: '服务降级', value: stats.degraded, sub: stats.degraded > 0 ? '需关注' : '正常', color: 'from-[#8b5cf6] to-[#a78bfa]', bg: 'bg-[rgba(139,92,246,0.08)]' },
     ];
   }, [stats]);
@@ -221,7 +226,7 @@ export default function NsfwLogs() {
 
       {/* Summary stat cards */}
       {statCards.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
           {statCards.map((card) => {
             const Icon = card.icon;
             return (
@@ -353,6 +358,7 @@ export default function NsfwLogs() {
               <option value="flag">标记</option>
               <option value="blur">模糊</option>
               <option value="degrade">降级</option>
+              <option value="upload_failed">上传失败</option>
             </select>
             <select
               value={nsfwFilter}
