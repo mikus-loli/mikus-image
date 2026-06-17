@@ -197,7 +197,10 @@ function insertDefaultData() {
     ['thumbnail_max_width', '300', 'number', '缩略图最大宽度', 0],
     ['default_strategy', 'default-local', 'string', '默认存储策略', 0],
     ['base_url', 'http://localhost:5173', 'string', '站点基础URL', 0],
-    ['jwt_secret', 'mikus-secret-key-2024', 'string', 'JWT密钥', 0],
+    // Note: jwt_secret is NOT seeded with a default value here.
+    // It is auto-generated on first startup (see app.ts initializeApp) or
+    // set via the JWT_SECRET environment variable. A hardcoded default would
+    // be a critical security vulnerability.
     ['register_enabled', 'true', 'boolean', '开放注册', 1],
     ['default_capacity', '104857600', 'number', '默认用户容量(字节)', 0],
     ['user_isolation', 'true', 'boolean', '用户隔离（普通用户只能看到自己的图片）', 1],

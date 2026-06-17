@@ -181,6 +181,13 @@ router.post('/', authMiddleware, adminMiddleware, async (req: Request, res: Resp
       return
     }
 
+    // Validate username format: reject path traversal characters and control chars
+    if (typeof name !== 'string' || name.length < 2 || name.length > 32 ||
+        /[\/\\]|\.\.|[\x00-\x1f]/.test(name)) {
+      res.status(400).json({ status: false, message: '用户名格式无效' })
+      return
+    }
+
     if (password.length < 8) {
       res.status(400).json({ status: false, message: '密码至少需要8位字符' })
       return

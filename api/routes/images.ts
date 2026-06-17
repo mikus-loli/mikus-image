@@ -126,9 +126,14 @@ function generateImageKey(extension: string, username?: string): string {
   const m = String(now.getMonth() + 1).padStart(2, '0')
   const d = String(now.getDate()).padStart(2, '0')
   const id = uuidv4().replace(/-/g, '').substring(0, 12)
+  // Sanitize username: only allow alphanumerics, underscore, hyphen, dot.
+  // Prevents path traversal (e.g. "..", "/", "\", null bytes) in the storage key.
+  const safeUsername = username
+    ? username.replace(/[^a-zA-Z0-9_.-]/g, '_').replace(/^\.+/, '')
+    : ''
   // Path format: username/YYYY/MM/DD/filename
-  if (username) {
-    return `${username}/${Y}/${m}/${d}/${id}${extension}`
+  if (safeUsername) {
+    return `${safeUsername}/${Y}/${m}/${d}/${id}${extension}`
   }
   // Default path format: YYYY/MM/DD/filename (for admin or when isolation is disabled)
   return `${Y}/${m}/${d}/${id}${extension}`

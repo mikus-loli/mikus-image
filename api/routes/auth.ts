@@ -33,6 +33,14 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
       return
     }
 
+    // Validate username format: only alphanumerics, underscore, hyphen, dot,
+    // and CJK characters. Reject path traversal characters and control chars.
+    if (typeof name !== 'string' || name.length < 2 || name.length > 32 ||
+        /[\/\\]|\.\.|[\x00-\x1f]/.test(name)) {
+      res.status(400).json({ status: false, message: '用户名格式无效' })
+      return
+    }
+
     if (password.length < 6) {
       res.status(400).json({ status: false, message: '密码至少6个字符' })
       return

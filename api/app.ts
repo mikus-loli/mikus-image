@@ -47,7 +47,28 @@ for (const dir of dirs) {
 }
 
 // Middleware
-app.use(cors())
+// CORS: restrict origins via CORS_ORIGIN env (comma-separated).
+// Defaults to allowing the same origin (no CORS headers) when unset, which
+// is safe for same-origin deployments. Never use wildcard '*' with credentials.
+const corsOriginEnv = process.env.CORS_ORIGIN
+const allowedOrigins = corsOriginEnv
+  ? corsOriginEnv.split(',').map((o) => o.trim()).filter(Boolean)
+  : []
+app.use(cors(
+  allowedOrigins.length > 0
+    ? {
+        origin: (origin, callback) => {
+          // Allow same-origin requests (no Origin header) and whitelisted origins
+          if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true)
+          } else {
+            callback(new Error('Not allowed by CORS'))
+          }
+        },
+        credentials: true,
+      }
+    : undefined
+))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
@@ -138,13 +159,22 @@ export async function initializeApp(): Promise<void> {
   await initDb()
   dbInitialized = true
 
-  // Auto-generate JWT_SECRET if not set via env
-  if (!process.env.JWT_SECRET) {
+  // Resolve JWT_SECRET with a strict priority:
+  //   1. JWT_SECRET environment variable (highest priority)
+  //   2. Existing value stored in the database — BUT only if it is not the
+  //      known insecure legacy default ('mikus-secret-key-2024'), which is
+  //      treated as absent and replaced with a fresh random secret.
+  //   3. Auto-generated random secret (persisted for subsequent restarts)
+  const LEGACY_INSECURE_SECRETS = new Set(['', 'mikus-secret-key-2024'])
+
+  if (process.env.JWT_SECRET) {
+    setJwtSecret(process.env.JWT_SECRET)
+  } else {
     const rows = query("SELECT value FROM settings WHERE key = 'jwt_secret'")
     let secret = rows[0]?.values?.[0]?.[0] as string | undefined
-    if (!secret) {
+    if (!secret || LEGACY_INSECURE_SECRETS.has(secret)) {
       secret = crypto.randomBytes(48).toString('hex')
-      query("INSERT OR IGNORE INTO settings (key, value, type, description) VALUES ('jwt_secret', ?, 'string', 'JWT 密钥（自动生成）')", [secret])
+      query("INSERT INTO settings (key, value, type, description) VALUES ('jwt_secret', ?, 'string', 'JWT 密钥（自动生成）') ON CONFLICT(key) DO UPDATE SET value = ?", [secret, secret])
       scheduleSave()
       console.log('JWT secret auto-generated and saved to database')
     }
