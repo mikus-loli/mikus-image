@@ -400,18 +400,20 @@ router.post('/', authMiddleware, upload.single('image'), async (req: Request, re
 
     res.status(201).json({ status: true, message: '上传成功', data: image })
   } catch (err: any) {
-    console.error('Upload error:', err)
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path)
     }
     if (err instanceof NsfwRejectedError) {
+      console.info('[NSFW] upload rejected:', err.message)
       res.status(403).json({ status: false, message: err.message })
       return
     }
     if (err instanceof NsfwServiceUnavailableError) {
+      console.warn('[NSFW] service unavailable:', err.message)
       res.status(503).json({ status: false, message: err.message })
       return
     }
+    console.error('Upload error:', err)
     res.status(500).json({ status: false, message: '上传失败' })
   }
 })
@@ -455,15 +457,17 @@ router.post('/url', authMiddleware, async (req: Request, res: Response): Promise
 
     res.status(201).json({ status: true, message: '上传成功', data: image })
   } catch (err: any) {
-    console.error('URL upload error:', err)
     if (err instanceof NsfwRejectedError) {
+      console.info('[NSFW] URL upload rejected:', err.message)
       res.status(403).json({ status: false, message: err.message })
       return
     }
     if (err instanceof NsfwServiceUnavailableError) {
+      console.warn('[NSFW] service unavailable during URL upload:', err.message)
       res.status(503).json({ status: false, message: err.message })
       return
     }
+    console.error('URL upload error:', err)
     res.status(500).json({ status: false, message: '从URL上传失败' })
   }
 })
