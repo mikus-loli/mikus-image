@@ -133,7 +133,7 @@ export default function Users() {
   const openEdit = (user: UserData) => {
     setEditUser(user);
     setEditRole(user.role);
-    setEditCapacity(user.capacity);
+    setEditCapacity(user.capacity / 1024 / 1024);
     setEditStatus(user.status);
   };
 
@@ -142,7 +142,7 @@ export default function Users() {
     try {
       await usersApi.updateUser(editUser.id, {
         role: editRole,
-        capacity: editCapacity,
+        capacity: Math.max(0, Math.round(editCapacity * 1024 * 1024)),
         status: editStatus,
       });
       setEditUser(null);
@@ -501,9 +501,9 @@ export default function Users() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm text-th-text-sec">存储容量 (字节)</label>
-                <input type="number" value={editCapacity} onChange={e => setEditCapacity(Number(e.target.value))} className="input-dark" />
-                <p className="mt-1 text-xs text-th-text-ter">当前: {formatSize(editCapacity)}</p>
+                <label className="mb-1 block text-sm text-th-text-sec">存储容量 (MB)</label>
+                <input type="number" min="0" step="0.1" value={editCapacity} onChange={e => setEditCapacity(Number(e.target.value))} className="input-dark" />
+                <p className="mt-1 text-xs text-th-text-ter">当前: {editCapacity.toFixed(1)} MB</p>
               </div>
               <div>
                 <label className="mb-1 block text-sm text-th-text-sec">状态</label>
